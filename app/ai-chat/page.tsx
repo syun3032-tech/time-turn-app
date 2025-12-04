@@ -182,11 +182,23 @@ export default function AIChatPage() {
       {/* メッセージ一覧 */}
       <VStack align="stretch" gap={3} mb={4}>
         {messages.length === 0 && (
-          <CharacterMessage
-            message="こんにちは！秘書ゆりです。何でも聞いてくださいね。"
-            expression="wawa"
-            avatarSize="large"
-          />
+          <>
+            <CharacterMessage
+              message="こんにちは！秘書ゆりです。何でも聞いてくださいね。"
+              expression="wawa"
+              avatarSize="large"
+            />
+            <Card.Root bg="blue.50" borderColor="blue.200">
+              <Card.Body>
+                <Text fontSize="sm" fontWeight="semibold" mb={1}>
+                  💡 新機能：スライド作成
+                </Text>
+                <Text fontSize="sm" color="gray.700">
+                  「○○についてのスライドを作って」と言うと、Manusを使って自動的にスライドを作成します！
+                </Text>
+              </Card.Body>
+            </Card.Root>
+          </>
         )}
 
         {messages.map((msg, index) => (

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { yuriCreateSlides } from "@/lib/manus-service";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -11,6 +12,21 @@ export async function POST(request: NextRequest) {
         { error: "Message is required" },
         { status: 400 }
       );
+    }
+
+    // スライド作成リクエストの検出
+    const slideKeywords = ['スライド', 'プレゼン', '資料', 'presentation', 'slide'];
+    const createKeywords = ['作って', '作成', '生成', 'つくって', '作る', 'create', 'make'];
+
+    const messageLC = message.toLowerCase();
+    const hasSlideKeyword = slideKeywords.some(kw => messageLC.includes(kw));
+    const hasCreateKeyword = createKeywords.some(kw => messageLC.includes(kw));
+
+    if (hasSlideKeyword && hasCreateKeyword) {
+      // スライド作成リクエスト
+      const topic = message.replace(/(スライド|プレゼン|資料|について|を|作って|作成|生成|つくって)/g, '').trim();
+      const slideResult = await yuriCreateSlides(topic, message);
+      return NextResponse.json({ reply: slideResult });
     }
 
     if (!GEMINI_API_KEY) {
