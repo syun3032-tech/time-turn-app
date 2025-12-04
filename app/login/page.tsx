@@ -133,7 +133,7 @@ export default function LoginPage() {
               {isSignUp ? 'アカウントをお持ちですか？' : 'アカウントをお持ちでないですか？'}
             </Text>
             <Button
-              variant="link"
+              variant="ghost"
               colorScheme="blue"
               size="sm"
               onClick={() => setIsSignUp(!isSignUp)}

@@ -4,7 +4,7 @@ import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButt
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { useState, useRef, useEffect } from "react";
-import { FiChevronRight, FiChevronDown, FiCalendar, FiCheck, FiStar } from "react-icons/fi";
+import { FiChevronRight, FiChevronDown, FiCalendar, FiCheck } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTree, saveTaskTree, generateNodeId } from "@/lib/task-tree-storage";
@@ -370,7 +370,6 @@ export default function TasksPage() {
   const [completingTask, setCompletingTask] = useState<any>(null);
   const [timeSpent, setTimeSpent] = useState<number>(0);
   const [reflectionNote, setReflectionNote] = useState("");
-  const [achievementRating, setAchievementRating] = useState<number>(3);
 
   // 認証チェック
   useEffect(() => {
@@ -540,7 +539,6 @@ export default function TasksPage() {
     setCompletingTask(node);
     setTimeSpent(0);
     setReflectionNote("");
-    setAchievementRating(3);
     setIsReflectionModalOpen(true);
   };
 
@@ -564,7 +562,6 @@ export default function TasksPage() {
         completedAt: new Date(),
         timeSpent: timeSpent || undefined,
         reflectionNote: reflectionNote || undefined,
-        achievementRating: achievementRating,
         aiCapable: completingTask.ai || false
       });
 
@@ -762,23 +759,6 @@ export default function TasksPage() {
                   />
                 </Box>
 
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>達成感レーティング</Text>
-                  <HStack justify="center" gap={2}>
-                    {[1, 2, 3, 4, 5].map((rating) => (
-                      <IconButton
-                        key={rating}
-                        aria-label={`${rating}つ星`}
-                        size="lg"
-                        variant="ghost"
-                        color={achievementRating >= rating ? "yellow.400" : "gray.300"}
-                        onClick={() => setAchievementRating(rating)}
-                      >
-                        <FiStar fill={achievementRating >= rating ? "currentColor" : "none"} />
-                      </IconButton>
-                    ))}
-                  </HStack>
-                </Box>
               </VStack>
             </Dialog.Body>
             <Dialog.Footer>
