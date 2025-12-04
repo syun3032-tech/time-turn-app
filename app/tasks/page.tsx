@@ -278,14 +278,13 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 <Button
                   size="xs"
                   colorScheme="green"
-                  leftIcon={<FiCheck />}
                   w="full"
                   onClick={(e) => {
                     e.stopPropagation();
                     onCompleteTask(node);
                   }}
                 >
-                  完了
+                  <FiCheck /> 完了
                 </Button>
               )}
 
@@ -617,7 +616,11 @@ export default function TasksPage() {
         <HStack gap={2} flexWrap="wrap">
           <HStack>
             <Text fontSize="sm">完了済みを表示</Text>
-            <Switch checked={showArchived} onCheckedChange={(e) => setShowArchived(e.checked)} />
+            <Switch.Root checked={showArchived} onCheckedChange={(e) => setShowArchived(e.checked)}>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch.Root>
           </HStack>
           <Badge colorScheme="purple" fontSize={{ base: "2xs", md: "xs" }}>AI実行ラベル</Badge>
         </HStack>
