@@ -46,10 +46,10 @@ export default function AIChatPage() {
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
-    // 「今だけ、資料作って」トリガーの検出
-    const slideTrigger = input.includes("今だけ") && input.includes("資料") && input.includes("作って");
+    // 「今だけ、資料」トリガーの検出
+    const slideTrigger = input.includes("今だけ") && input.includes("資料");
     if (slideTrigger) {
-      router.push("/slide-create");
+      router.push("/tasks/slide-creation/run");
       return;
     }
 
@@ -203,7 +203,7 @@ export default function AIChatPage() {
                   💡 新機能：スライド作成
                 </Text>
                 <Text fontSize="sm" color="gray.700">
-                  「今だけ、資料作って」と言うと、スライド作成画面に移動します！
+                  「今だけ、資料」と言うと、スライド作成画面に移動します！
                 </Text>
               </Card.Body>
             </Card.Root>
