@@ -195,7 +195,7 @@ export default function ProfilePage() {
               );
             })}
           </Box>
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" gap={2}>
             <Tag.Root colorScheme="blue">
               <Tag.Label>集中タイプ</Tag.Label>
             </Tag.Root>
@@ -214,9 +214,9 @@ export default function ProfilePage() {
           <Heading size="sm">実績バッジ</Heading>
         </Card.Header>
         <Card.Body>
-          <SimpleGrid columns={{ base: 2, md: 3 }} spacing={2}>
+          <SimpleGrid columns={{ base: 2, md: 3 }} gap={2}>
             {achievements.map((a) => (
-              <VStack key={a} align="stretch" spacing={1} bg="white" p={3} borderRadius="md" border="1px solid" borderColor="gray.100">
+              <VStack key={a} align="stretch" gap={1} bg="white" p={3} borderRadius="md" border="1px solid" borderColor="gray.100">
                 <Text fontWeight="semibold" fontSize="sm">
                   {a}
                 </Text>

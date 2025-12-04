@@ -52,7 +52,7 @@ export default function TaskRunPage() {
           <Heading size="sm">今回のタスク</Heading>
         </Card.Header>
         <Card.Body>
-          <Stack spacing={2}>
+          <Stack gap={2}>
             <Text fontWeight="semibold">{mockTask.title}</Text>
             <Text fontSize="sm">出力タイプ: {mockTask.outputType}</Text>
             <Badge colorScheme="pink">{mockTask.model}</Badge>
@@ -65,7 +65,7 @@ export default function TaskRunPage() {
           <Heading size="sm">サブエージェント</Heading>
         </Card.Header>
         <Card.Body>
-          <Stack spacing={3}>
+          <Stack gap={3}>
             <Text fontWeight="semibold">{mockTask.agent}</Text>
             <Textarea value={mockTask.prompt} readOnly />
             <Flex gap={3}>

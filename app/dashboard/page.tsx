@@ -419,7 +419,7 @@ export default function DashboardPage() {
       </Box>
 
       {/* メインコンテンツ */}
-      <VStack spacing={0} pt={8}>
+      <VStack gap={0} pt={8}>
         {/* タスク分解段階インジケーター */}
         {taskBreakdownStage === "interest" && (
           <Box
@@ -508,7 +508,7 @@ export default function DashboardPage() {
             filter="drop-shadow(0 -2px 2px rgba(0,0,0,0.04))"
           />
 
-          <VStack align="stretch" spacing={2}>
+          <VStack align="stretch" gap={2}>
             <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.6" whiteSpace="pre-wrap">
               {isLoading ? "考えています..." : characterMessage}
             </Text>
@@ -551,7 +551,7 @@ export default function DashboardPage() {
 
         {/* チャット入力欄 */}
         <Box w="90%" maxW="340px" mb={6}>
-          <VStack spacing={2}>
+          <VStack gap={2}>
             <Input
               placeholder={
                 taskBreakdownStage === "breakdown"
@@ -577,7 +577,7 @@ export default function DashboardPage() {
               fontSize="md"
               _placeholder={{ color: "gray.400" }}
             />
-            <HStack w="100%" spacing={2}>
+            <HStack w="100%" gap={2}>
               <Button
                 colorScheme="teal"
                 flex={1}

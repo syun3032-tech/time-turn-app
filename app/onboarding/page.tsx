@@ -36,12 +36,12 @@ export default function OnboardingPage() {
         showAvatar={false}
       />
 
-      <VStack align="stretch" spacing={3} mt={6}>
+      <VStack align="stretch" gap={3} mt={6}>
         <Heading size="sm">暫定Goal案</Heading>
         {sampleGoals.map((goal, idx) => (
           <Card.Root key={idx}>
             <Card.Body>
-              <Stack spacing={1}>
+              <Stack gap={1}>
                 <Heading size="sm">{goal.title}</Heading>
                 <Text fontSize="sm">Why: {goal.why}</Text>
                 <Text fontSize="sm">期限: {goal.deadline} / 優先度: {goal.priority}</Text>
