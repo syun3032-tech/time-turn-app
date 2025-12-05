@@ -11,6 +11,7 @@ import { getTaskTree, saveTaskTree, generateNodeId } from "@/lib/task-tree-stora
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveCompletedTask } from "@/lib/firebase/firestore";
+import { TaskNode } from "@/types/task-tree";
 
 const initialTreeBackup = [
   {
@@ -360,7 +361,7 @@ export default function TasksPage() {
   const searchParams = useSearchParams();
   const highlightId = searchParams.get("highlight");
 
-  const [tree, setTree] = useState(initialTreeBackup);
+  const [tree, setTree] = useState<TaskNode[]>(initialTreeBackup as TaskNode[]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [nodeCounter, setNodeCounter] = useState(20); // Start from 20 since we have 19 tasks
   const [showArchived, setShowArchived] = useState(false);
