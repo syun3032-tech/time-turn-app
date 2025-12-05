@@ -14,7 +14,6 @@ import {
   createListCollection,
 } from "@chakra-ui/react";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { NavTabs } from "@/components/NavTabs";
 import { CharacterMessage } from "@/components/CharacterMessage";
 import { chatWithAI, chatWithAISeamless, AIProvider } from "@/lib/ai-service";
@@ -35,7 +34,6 @@ interface Message {
 }
 
 export default function AIChatPage() {
-  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -45,13 +43,6 @@ export default function AIChatPage() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-
-    // 「今だけ、資料」トリガーの検出
-    const slideTrigger = input.includes("今だけ") && input.includes("資料");
-    if (slideTrigger) {
-      router.push("/tasks/slide-creation/run");
-      return;
-    }
 
     const userMessage: Message = { role: "user", content: input };
     const newMessages = [...messages, userMessage];
@@ -197,16 +188,6 @@ export default function AIChatPage() {
               expression="wawa"
               avatarSize="large"
             />
-            <Card.Root bg="blue.50" borderColor="blue.200">
-              <Card.Body>
-                <Text fontSize="sm" fontWeight="semibold" mb={1}>
-                  💡 新機能：スライド作成
-                </Text>
-                <Text fontSize="sm" color="gray.700">
-                  「今だけ、資料」と言うと、スライド作成画面に移動します！
-                </Text>
-              </Card.Body>
-            </Card.Root>
           </>
         )}
 
