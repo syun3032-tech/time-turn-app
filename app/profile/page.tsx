@@ -111,7 +111,8 @@ export default function ProfilePage() {
           <Heading size="sm">パラメータ</Heading>
         </Card.Header>
         <Card.Body>
-          <Box as="svg" viewBox="0 0 220 220" w="100%" h="220px">
+          <Box w="100%" h="220px">
+            <svg viewBox="0 0 220 220" width="100%" height="220">
             {[20, 40, 60, 80, 100].map((p) => {
               const r = (p / 100) * radius;
               const pts = radarStats
@@ -148,6 +149,7 @@ export default function ProfilePage() {
                 </text>
               );
             })}
+            </svg>
           </Box>
         </Card.Body>
       </Card.Root>
@@ -157,7 +159,8 @@ export default function ProfilePage() {
           <Heading size="sm">気分・特性</Heading>
         </Card.Header>
         <Card.Body>
-          <Box as="svg" viewBox="0 0 220 220" w="100%" h="220px" mb={2}>
+          <Box w="100%" h="220px" mb={2}>
+            <svg viewBox="0 0 220 220" width="100%" height="220">
             {[20, 40, 60, 80, 100].map((p) => {
               const r = (p / 100) * radius;
               const pts = personalityStats
@@ -194,6 +197,7 @@ export default function ProfilePage() {
                 </text>
               );
             })}
+            </svg>
           </Box>
           <Stack direction="row" gap={2}>
             <Tag.Root colorScheme="blue">
