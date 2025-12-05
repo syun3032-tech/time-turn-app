@@ -194,15 +194,15 @@ export default function SlideCreationPage() {
                           コアバリュー: {coreValue}
                         </Text>
                         {result.startsWith("http") && (
-                          <Button
-                            as="a"
-                            href={result}
-                            target="_blank"
-                            colorScheme="green"
-                            size="md"
-                          >
-                            スライドを開く
-                          </Button>
+                          <a href={result} target="_blank" rel="noopener noreferrer">
+                            <Button
+                              colorScheme="green"
+                              size="md"
+                              w="full"
+                            >
+                              スライドを開く
+                            </Button>
+                          </a>
                         )}
                         {!result.startsWith("http") && (
                           <Text fontSize="sm">{result}</Text>

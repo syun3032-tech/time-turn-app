@@ -123,15 +123,15 @@ export default function SlideCreatePage() {
                         ✅ スライドが完成しました！
                       </Text>
                       {result.startsWith("http") ? (
-                        <Button
-                          as="a"
-                          href={result}
-                          target="_blank"
-                          colorScheme="green"
-                          size="sm"
-                        >
-                          スライドを開く
-                        </Button>
+                        <a href={result} target="_blank" rel="noopener noreferrer">
+                          <Button
+                            colorScheme="green"
+                            size="sm"
+                            w="full"
+                          >
+                            スライドを開く
+                          </Button>
+                        </a>
                       ) : (
                         <Text fontSize="sm" color="gray.700">
                           {result}
