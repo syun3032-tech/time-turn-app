@@ -3,13 +3,16 @@
 import { Box, Image } from "@chakra-ui/react";
 
 // 表情の種類（将来的に拡張可能）
-export type Expression = "normal" | "open_mouth" | "wawa";
+export type Expression = "normal" | "open_mouth" | "wawa" | "niyari" | "mewo" | "ookiokutigake";
 
 // 表情と画像パスのマッピング
 const EXPRESSION_IMAGES: Record<Expression, string> = {
   normal: "/秘書ゆり_ノーマル.png",        // デフォルト
   open_mouth: "/秘書ゆり_お口開けた.png",  // 通常の会話・説明
   wawa: "/わわ_秘書ゆり.png",              // 褒める・応援・驚き
+  niyari: "/秘書ゆり_ノーマル.png",        // にやり（画像がない場合はノーマル）
+  mewo: "/秘書ゆり_ノーマル.png",          // 目を（画像がない場合はノーマル）
+  ookiokutigake: "/秘書ゆり_お口開けた.png", // 大きく口開けた
 };
 
 interface CharacterAvatarProps {
