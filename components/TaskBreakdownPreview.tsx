@@ -85,21 +85,20 @@ export function TaskBreakdownPreview({
                 </Text>
               )}
 
-              {/* タスクの詳細情報 */}
-              {"estimatedTime" in node && node.estimatedTime && (
+              {(node as any).estimatedTime && (
                 <HStack gap={2} fontSize="xs" flexWrap="wrap">
                   <Badge size="sm" variant="outline">
-                    所要時間: {node.estimatedTime}分
+                    所要時間: {(node as any).estimatedTime}分
                   </Badge>
-                  {"difficulty" in node && node.difficulty && (
+                  {(node as any).difficulty && (
                     <Badge size="sm" variant="outline" colorScheme={
-                      node.difficulty === "Easy" ? "green" :
-                      node.difficulty === "Medium" ? "yellow" : "red"
+                      (node as any).difficulty === "Easy" ? "green" :
+                      (node as any).difficulty === "Medium" ? "yellow" : "red"
                     }>
-                      難易度: {node.difficulty}
+                      難易度: {(node as any).difficulty}
                     </Badge>
                   )}
-                  {"ai" in node && node.ai && (
+                  {(node as any).ai && (
                     <Badge size="sm" colorScheme="pink">
                       AI実行可
                     </Badge>
@@ -108,21 +107,21 @@ export function TaskBreakdownPreview({
               )}
 
               {/* 期限表示 */}
-              {(node.startDate || node.endDate || ("deadline" in node && node.deadline)) && (
+              {(node.startDate || node.endDate || (node as any).deadline) && (
                 <Text fontSize="xs" color="teal.600">
                   {node.startDate && `開始: ${node.startDate}`}
                   {node.endDate && ` 〜 終了: ${node.endDate}`}
-                  {"deadline" in node && node.deadline && ` 期限: ${node.deadline}`}
+                  {(node as any).deadline && ` 期限: ${(node as any).deadline}`}
                 </Text>
               )}
 
               {/* 成果物・必要スキル */}
               <HStack gap={2} fontSize="xs" flexWrap="wrap">
-                {"outputType" in node && node.outputType && (
-                  <Text>成果物: {node.outputType}</Text>
+                {(node as any).outputType && (
+                  <Text>成果物: {(node as any).outputType}</Text>
                 )}
-                {"requiredSkill" in node && node.requiredSkill && (
-                  <Text>必要スキル: {node.requiredSkill}</Text>
+                {(node as any).requiredSkill && (
+                  <Text>必要スキル: {(node as any).requiredSkill}</Text>
                 )}
               </HStack>
             </VStack>

@@ -47,7 +47,6 @@ export function CharacterAvatar({
         objectFit="cover"
         w="100%"
         h="100%"
-        fallbackSrc="https://via.placeholder.com/280x420/f3f4f6/9ca3af?text=Character"
         transition="opacity 0.2s ease-in-out"
       />
     </Box>

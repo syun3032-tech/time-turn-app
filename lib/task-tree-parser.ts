@@ -5,12 +5,12 @@ import { generateNodeId } from "./task-tree-storage";
  * AIメッセージからタスクツリー構造を解析する
  *
  * 例:
- * Goal: 阪大医学部に合格する
- * ├─ Project: 数学の実力を上げる
- * │  ├─ Milestone: 微積分を完璧にする
- * │  │  └─ Task: 基礎問題集1-3章
- * │  └─ Milestone: 確率統計をマスターする
- * └─ Project: 英語力を向上させる
+ * Goal: Webアプリを作れるようになる
+ * ├─ Project: フロントエンド開発を学ぶ
+ * │  ├─ Milestone: Reactの基礎を習得
+ * │  │  └─ Task: 公式チュートリアルを完了
+ * │  └─ Milestone: 実践的なアプリ作成
+ * └─ Project: バックエンド開発を学ぶ
  */
 export function parseTaskTreeFromMessage(message: string): TaskNode[] {
   const lines = message.split('\n');

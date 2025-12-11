@@ -3,8 +3,8 @@
 import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Input, Dialog, Progress, Stack, Textarea, Switch } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
-import { useState, useRef, useEffect } from "react";
-import { FiChevronRight, FiChevronDown, FiCalendar, FiCheck } from "react-icons/fi";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { FiChevronRight, FiChevronDown, FiCalendar, FiCheck, FiEdit, FiTrash2 } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTree, saveTaskTree, generateNodeId } from "@/lib/task-tree-storage";
@@ -149,12 +149,15 @@ interface TreeNodeProps {
   onAddChild: (parentId: string, type: string) => void;
   onOpenPeriodModal: (node: any) => void;
   onCompleteTask: (node: any) => void;
+  onEditNode: (node: any) => void;
+  onDeleteNode: (nodeId: string) => void;
   highlightedId?: string | null;
   showArchived: boolean;
 }
 
-function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, highlightedId, showArchived }: TreeNodeProps) {
+function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onEditNode, onDeleteNode, highlightedId, showArchived }: TreeNodeProps) {
   const isTask = node.title?.startsWith("Task:");
+  const isGoal = node.title?.startsWith("Goal:");
   const hasChildren = node.children && node.children.length > 0;
   const isArchived = node.archived === true;
   const isExpanded = expandedNodes.has(node.id);
@@ -212,7 +215,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
         onClick={handleClick}
       >
         <Card.Body p={{ base: 3, md: 4 }}>
-          <HStack justify="space-between" align="center">
+          <HStack justify="space-between" align="flex-start">
             <VStack align="stretch" gap={2} flex={1}>
               <Text
                 fontSize={{ base: "sm", md: "md" }}
@@ -296,16 +299,34 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               )}
             </VStack>
 
-            {hasChildren && !isTask && (
-              <IconButton
-                aria-label={isExpanded ? "閉じる" : "展開"}
-                size="sm"
-                variant="ghost"
-                colorScheme="teal"
-              >
-                {isExpanded ? <FiChevronDown /> : <FiChevronRight />}
-              </IconButton>
-            )}
+            <VStack gap={1}>
+              {/* 編集ボタン（Goalの場合のみ） */}
+              {isGoal && (
+                <IconButton
+                  aria-label="編集"
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="gray"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditNode(node);
+                  }}
+                >
+                  <FiEdit />
+                </IconButton>
+              )}
+
+              {hasChildren && !isTask && (
+                <IconButton
+                  aria-label={isExpanded ? "閉じる" : "展開"}
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="teal"
+                >
+                  {isExpanded ? <FiChevronDown /> : <FiChevronRight />}
+                </IconButton>
+              )}
+            </VStack>
           </HStack>
         </Card.Body>
       </Card.Root>
@@ -323,6 +344,8 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               onAddChild={onAddChild}
               onOpenPeriodModal={onOpenPeriodModal}
               onCompleteTask={onCompleteTask}
+              onEditNode={onEditNode}
+              onDeleteNode={onDeleteNode}
               highlightedId={highlightedId}
               showArchived={showArchived}
             />
@@ -355,7 +378,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   );
 }
 
-export default function TasksPage() {
+function TasksPageContent() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const searchParams = useSearchParams();
@@ -371,6 +394,11 @@ export default function TasksPage() {
   const [completingTask, setCompletingTask] = useState<any>(null);
   const [timeSpent, setTimeSpent] = useState<number>(0);
   const [reflectionNote, setReflectionNote] = useState("");
+
+  // 編集モーダル
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingNode, setEditingNode] = useState<any>(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   // 認証チェック
   useEffect(() => {
@@ -543,6 +571,75 @@ export default function TasksPage() {
     setIsReflectionModalOpen(true);
   };
 
+  const handleEditNode = (node: any) => {
+    setEditingNode(node);
+    // タイトルからプレフィックス（Goal:, Project:など）を除去
+    const titleWithoutPrefix = node.title.replace(/^(Goal|Project|Milestone|Task):\s*/, "");
+    setEditingTitle(titleWithoutPrefix);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingNode || !editingTitle.trim()) return;
+
+    // タイプを判定
+    const getNodeType = (title: string) => {
+      if (title.startsWith("Goal:")) return "Goal";
+      if (title.startsWith("Project:")) return "Project";
+      if (title.startsWith("Milestone:")) return "Milestone";
+      return "Task";
+    };
+
+    const nodeType = getNodeType(editingNode.title);
+
+    // ツリーを更新
+    const updateTree = (nodes: any[]): any[] => {
+      return nodes.map((node) => {
+        if (node.id === editingNode.id) {
+          return {
+            ...node,
+            title: `${nodeType}: ${editingTitle.trim()}`,
+          };
+        } else if (node.children) {
+          return {
+            ...node,
+            children: updateTree(node.children),
+          };
+        }
+        return node;
+      });
+    };
+
+    setTree(updateTree(tree));
+    setIsEditModalOpen(false);
+    setEditingNode(null);
+    setEditingTitle("");
+  };
+
+  const handleDeleteNode = (nodeId: string) => {
+    if (!confirm("本当に削除しますか？この操作は元に戻せません。")) return;
+
+    // ルートレベルから削除
+    const newTree = tree.filter((node) => node.id !== nodeId);
+
+    // 子ノードからも削除する場合
+    const deleteFromTree = (nodes: any[]): any[] => {
+      return nodes
+        .filter((node) => node.id !== nodeId)
+        .map((node) => {
+          if (node.children) {
+            return {
+              ...node,
+              children: deleteFromTree(node.children),
+            };
+          }
+          return node;
+        });
+    };
+
+    setTree(deleteFromTree(newTree));
+  };
+
   const handleSaveCompletion = async () => {
     if (!user || !completingTask) return;
 
@@ -634,6 +731,8 @@ export default function TasksPage() {
             onAddChild={handleAddChild}
             onOpenPeriodModal={handleOpenPeriodModal}
             onCompleteTask={handleCompleteTask}
+            onEditNode={handleEditNode}
+            onDeleteNode={handleDeleteNode}
             highlightedId={highlightId}
             showArchived={showArchived}
           />
@@ -724,39 +823,96 @@ export default function TasksPage() {
         </Dialog.Positioner>
       </Dialog.Root>
 
+      {/* Edit Modal */}
+      <Dialog.Root open={isEditModalOpen} onOpenChange={(e) => setIsEditModalOpen(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content maxW="500px">
+            <Dialog.Header>
+              <Dialog.Title>Goalを編集</Dialog.Title>
+              <Dialog.CloseTrigger />
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="stretch" gap={4}>
+                <Box>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2}>Goal名</Text>
+                  <Input
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    placeholder="例: 国立理系に合格する"
+                    autoFocus
+                  />
+                </Box>
+
+                <Box>
+                  <Button
+                    colorScheme="red"
+                    variant="outline"
+                    size="sm"
+                    w="full"
+                    onClick={() => {
+                      if (editingNode) {
+                        setIsEditModalOpen(false);
+                        handleDeleteNode(editingNode.id);
+                      }
+                    }}
+                  >
+                    <FiTrash2 /> このGoalを削除
+                  </Button>
+                </Box>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <HStack w="full" justify="flex-end" gap={2}>
+                <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+                  キャンセル
+                </Button>
+                <Button colorScheme="teal" onClick={handleSaveEdit}>
+                  保存
+                </Button>
+              </HStack>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
       {/* Reflection Modal */}
       <Dialog.Root open={isReflectionModalOpen} onOpenChange={(e) => setIsReflectionModalOpen(e.open)}>
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content maxW="500px">
             <Dialog.Header>
-              <Dialog.Title>タスク完了の振り返り</Dialog.Title>
+              <Dialog.Title fontSize="lg" fontWeight="bold" color="gray.900">タスク完了の振り返り</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="stretch" gap={4}>
                 <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>タスク名</Text>
-                  <Text fontSize="sm" color="gray.600">{completingTask?.title}</Text>
+                  <Text fontSize="md" fontWeight="bold" mb={2} color="gray.900">タスク名</Text>
+                  <Text fontSize="md" color="gray.900" fontWeight="semibold">{completingTask?.title}</Text>
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>かかった時間（分）</Text>
+                  <Text fontSize="md" fontWeight="bold" mb={2} color="gray.900">かかった時間（分）</Text>
                   <Input
                     type="number"
                     value={timeSpent}
                     onChange={(e) => setTimeSpent(Number(e.target.value))}
                     placeholder="例: 30"
+                    fontSize="md"
+                    fontWeight="medium"
                   />
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>振り返りメモ</Text>
+                  <Text fontSize="md" fontWeight="bold" mb={2} color="gray.900">振り返りメモ</Text>
                   <Textarea
                     value={reflectionNote}
                     onChange={(e) => setReflectionNote(e.target.value)}
                     placeholder="どうだったか、学んだことなど..."
                     rows={4}
+                    fontSize="md"
+                    fontWeight="medium"
                   />
                 </Box>
 
@@ -764,10 +920,10 @@ export default function TasksPage() {
             </Dialog.Body>
             <Dialog.Footer>
               <HStack w="full" justify="flex-end" gap={2}>
-                <Button variant="outline" onClick={() => setIsReflectionModalOpen(false)}>
+                <Button variant="outline" onClick={() => setIsReflectionModalOpen(false)} fontSize="md">
                   キャンセル
                 </Button>
-                <Button colorScheme="green" onClick={handleSaveCompletion}>
+                <Button colorScheme="green" onClick={handleSaveCompletion} fontSize="md" fontWeight="bold">
                   完了して記録
                 </Button>
               </HStack>
@@ -776,5 +932,13 @@ export default function TasksPage() {
         </Dialog.Positioner>
       </Dialog.Root>
     </Box>
+  );
+}
+
+export default function TasksPage() {
+  return (
+    <Suspense fallback={<Box px={4} py={6}><Text>読み込み中...</Text></Box>}>
+      <TasksPageContent />
+    </Suspense>
   );
 }

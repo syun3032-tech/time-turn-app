@@ -13,9 +13,74 @@ import { getTaskTree, saveTaskTree, serializeTreeForAI, addNodeToTree, generateN
 import { TaskNode } from "@/types/task-tree";
 import { getInterestStagePrompt, getProposalStagePrompt, getEnhancedTaskBreakdownPrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage } from "@/lib/firebase/firestore";
+import { getChatMessages as getFirestoreChatMessages, saveChatMessage as saveFirestoreChatMessage, clearChatHistory as clearFirestoreChatHistory } from "@/lib/firebase/firestore";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
+
+// ========== ローカルストレージモード（一時的） ==========
+const USE_LOCAL_STORAGE = true; // false にするとFirestoreに戻る
+const LOAD_HISTORY_ON_START = false; // 起動時に履歴を読み込むか（falseで完全リセット）
+
+interface LocalMessage {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+// ローカルストレージ用のヘルパー関数
+const getChatMessages = async (userId: string): Promise<any[]> => {
+  if (USE_LOCAL_STORAGE) {
+    const data = localStorage.getItem(`chatHistory_${userId}`);
+    if (!data) return [];
+    const messages: LocalMessage[] = JSON.parse(data);
+    return messages.map(m => ({ ...m, createdAt: new Date(m.createdAt) }));
+  } else {
+    return await getFirestoreChatMessages(userId);
+  }
+};
+
+const saveChatMessage = async (userId: string, role: "user" | "assistant", content: string): Promise<void> => {
+  if (USE_LOCAL_STORAGE) {
+    const existing = localStorage.getItem(`chatHistory_${userId}`);
+    const messages: LocalMessage[] = existing ? JSON.parse(existing) : [];
+    messages.push({
+      role,
+      content,
+      createdAt: new Date().toISOString()
+    });
+    localStorage.setItem(`chatHistory_${userId}`, JSON.stringify(messages));
+  } else {
+    await saveFirestoreChatMessage(userId, role, content);
+  }
+};
+
+const clearChatHistory = async (userId: string): Promise<void> => {
+  if (USE_LOCAL_STORAGE) {
+    // 新しいキー
+    localStorage.removeItem(`chatHistory_${userId}`);
+    // 古いキーも削除（念のため）
+    localStorage.removeItem("chatHistory");
+    // デバッグ用：全部表示
+    console.log("localStorage cleared:", `chatHistory_${userId}`);
+  } else {
+    await clearFirestoreChatHistory(userId);
+  }
+};
+
+// 完全リセット関数（localStorage全部 + Firestore両方クリア）
+const clearAllHistory = async (userId: string): Promise<void> => {
+  // localStorage全部クリア
+  localStorage.removeItem(`chatHistory_${userId}`);
+  localStorage.removeItem("chatHistory");
+  // Firestoreもクリア（念のため）
+  try {
+    await clearFirestoreChatHistory(userId);
+    console.log("Firestore & localStorage 両方クリアしました");
+  } catch (error) {
+    console.error("Firestore clear error:", error);
+  }
+};
+// ========================================================
 
 interface Message {
   role: "user" | "assistant";
@@ -58,13 +123,49 @@ export default function DashboardPage() {
     setTaskTree(tree);
   }, []);
 
-  // 会話履歴をFirestoreから読み込み
+  // 会話履歴を読み込み（起動時）
   useEffect(() => {
     if (!user) return;
 
-    const loadChatHistory = async () => {
+    // 起動時に履歴をクリア（完全リセット）
+    const clearOldHistory = async () => {
+      console.log("🗑️ 古い履歴をクリア中...");
       try {
+        // localStorage完全クリア
+        localStorage.removeItem(`chatHistory_${user.uid}`);
+        localStorage.removeItem("chatHistory");
+        // Firestoreもクリア
+        await clearFirestoreChatHistory(user.uid);
+        console.log("✅ 完全クリア完了！新規スタートです。");
+      } catch (error) {
+        console.error("クリアエラー:", error);
+      }
+    };
+
+    const loadChatHistory = async () => {
+      if (!LOAD_HISTORY_ON_START) {
+        console.log("📝 履歴読み込みスキップ（LOAD_HISTORY_ON_START = false）");
+        return;
+      }
+
+      try {
+        console.log(`=== 会話履歴読み込み開始 (${USE_LOCAL_STORAGE ? 'localStorage' : 'Firestore'}) ===`);
+        console.log("ユーザーID:", user.uid);
+        
+        // デバッグ：localStorageの内容を確認
+        if (USE_LOCAL_STORAGE) {
+          const key = `chatHistory_${user.uid}`;
+          const data = localStorage.getItem(key);
+          console.log(`localStorage[${key}]:`, data ? data.substring(0, 200) : "なし");
+          
+          // 古いキーも確認
+          const oldData = localStorage.getItem("chatHistory");
+          console.log("localStorage[chatHistory]:", oldData ? oldData.substring(0, 200) : "なし");
+        }
+        
         const chatMessages = await getChatMessages(user.uid);
+        console.log("読み込んだメッセージ数:", chatMessages.length);
+        
         const formattedMessages: Message[] = chatMessages.map(msg => ({
           role: msg.role,
           content: msg.content
@@ -74,14 +175,20 @@ export default function DashboardPage() {
         // 最後のアシスタントメッセージを表示
         const lastAssistant = formattedMessages.filter((m: Message) => m.role === "assistant").pop();
         if (lastAssistant) {
+          console.log("最後のアシスタントメッセージ:", lastAssistant.content.substring(0, 100));
           setCharacterMessage(lastAssistant.content);
+        } else {
+          console.log("アシスタントメッセージなし");
         }
       } catch (error) {
         console.error("Failed to load chat history:", error);
       }
     };
 
-    loadChatHistory();
+    // 初回起動時に完全クリア
+    clearOldHistory().then(() => {
+      loadChatHistory();
+    });
   }, [user]);
 
   // 表情を5秒後にノーマルに戻すヘルパー関数
@@ -226,12 +333,12 @@ export default function DashboardPage() {
         setGoalContext(message); // 最初の目標を保存
       }
       // === Stage 2: Interest → Proposal ===
-      // Interest段階で2往復以上したら提案段階へ
+      // Interest段階で十分深掘りしたら提案段階へ
       else if (taskBreakdownStage === "interest") {
         const interestMessages = newMessages.filter(m => m.role === "user" || m.role === "assistant");
 
-        // 2往復（4メッセージ）以上で提案段階へ
-        if (interestMessages.length >= 4) {
+        // 5往復（10メッセージ）以上で提案段階へ（しっかり深掘りする）
+        if (interestMessages.length >= 10) {
           setTaskBreakdownStage("proposal");
 
           // 会話のサマリーを作成
@@ -287,23 +394,31 @@ export default function DashboardPage() {
         }
       }
 
-      // Few-shot examples を先頭に追加（AIに短い会話を学習させる）
+      // 会話履歴を最新10往復（20メッセージ）に制限してAPIリクエストを節約
+      if (contextToSend.length > 20) {
+        contextToSend = contextToSend.slice(-20);
+      }
+
+      // Few-shot examples を超短く（1行で質問だけ）
       const fewShotExamples: Message[] = [
-        { role: "user", content: "阪大行きたい" },
-        { role: "assistant", content: "いいね！なんで？きっかけあるの？" },
-        { role: "user", content: "周りにイキれるから" },
-        { role: "assistant", content: "そうなの！？ なんでイキリたいの？今に満足できてない感じ？" },
+        { role: "user", content: "プログラミング勉強したい" },
+        { role: "assistant", content: "なんで？" },
+        { role: "user", content: "起業したいから" },
+        { role: "assistant", content: "きっかけあるの？" },
       ];
+
+      // Few-shot examplesは会話が少ない時だけ追加（最初の2往復まで）
+      const shouldAddFewShot = newMessages.length < 4;
 
       // システムプロンプトがある場合は先頭に追加
       if (systemPrompt && contextToSend[0]?.content !== systemPrompt) {
         contextToSend = [
           { role: "user", content: systemPrompt },
-          ...fewShotExamples,
+          ...(shouldAddFewShot ? fewShotExamples : []),
           ...contextToSend,
         ];
-      } else {
-        // システムプロンプトがない場合もFew-shot examplesは追加
+      } else if (shouldAddFewShot) {
+        // システムプロンプトがない場合で、会話が少ない時のみFew-shot examplesを追加
         contextToSend = [
           ...fewShotExamples,
           ...contextToSend,
@@ -376,6 +491,34 @@ export default function DashboardPage() {
               onClick={handleLogout}
             >
               ログアウト
+            </Button>
+            <Button
+              size="xs"
+              colorScheme="orange"
+              variant="ghost"
+              onClick={async () => {
+                if (!user) return;
+                if (confirm("会話ログを完全に削除しますか？（localStorage + Firestore 両方）")) {
+                  try {
+                    await clearAllHistory(user.uid);
+                    setMessages([]);
+                    setCharacterMessage("今日はどのタスクから行く？");
+                    setCharacterExpression("normal");
+                    setTaskBreakdownStage("normal");
+                    setGoalContext("");
+                    alert("会話ログを完全削除しました！ページをリロードしてください。");
+                    // 自動リロード
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 1000);
+                  } catch (error) {
+                    console.error("Failed to clear chat:", error);
+                    alert("削除に失敗しました");
+                  }
+                }
+              }}
+            >
+              🗑️完全削除
             </Button>
             <Box>
               <Text fontSize="xs" color="gray.500">
@@ -538,15 +681,39 @@ export default function DashboardPage() {
 
         {/* 会話履歴ボタン（会話がある時のみ表示） */}
         {messages.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            colorScheme="gray"
-            onClick={() => setIsHistoryModalOpen(true)}
-            mb={2}
-          >
-            📝 会話履歴を見る ({messages.length / 2}往復)
-          </Button>
+          <VStack gap={2} mb={2}>
+            <Button
+              size="sm"
+              variant="ghost"
+              colorScheme="gray"
+              onClick={() => setIsHistoryModalOpen(true)}
+            >
+              📝 会話履歴を見る ({messages.length / 2}往復)
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              colorScheme="orange"
+              onClick={async () => {
+                if (!user) return;
+                if (confirm(`会話ログを確認しますか？(${USE_LOCAL_STORAGE ? 'localStorage' : 'Firestore'})`)) {
+                  try {
+                    const logs = await getChatMessages(user.uid);
+                    console.log(`=== 会話ログ (${USE_LOCAL_STORAGE ? 'localStorage' : 'Firestore'}) ===`);
+                    console.log(`件数: ${logs.length}`);
+                    logs.forEach((log, idx) => {
+                      console.log(`${idx + 1}. [${log.role}] ${log.content.substring(0, 50)}...`);
+                    });
+                    alert(`会話ログ ${logs.length}件をコンソールに出力しました`);
+                  } catch (error) {
+                    console.error("Failed to get logs:", error);
+                  }
+                }
+              }}
+            >
+              🔍 ログ確認（{USE_LOCAL_STORAGE ? 'Local' : 'DB'}）
+            </Button>
+          </VStack>
         )}
 
         {/* チャット入力欄 */}
@@ -589,7 +756,9 @@ export default function DashboardPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
+                onClick={async () => {
+                  if (!confirm("会話をリセットしますか？")) return;
+                  
                   const defaultMessage = "今日はどのタスクから行く？";
                   setCharacterMessage(defaultMessage);
                   setCharacterExpression("normal");
@@ -598,7 +767,14 @@ export default function DashboardPage() {
                   setGoalContext("");
                   setMessage("");
                   // 会話履歴をクリア
-                  localStorage.removeItem("chatHistory");
+                  if (user) {
+                    try {
+                      await clearAllHistory(user.uid);
+                      console.log("会話履歴を完全削除しました");
+                    } catch (error) {
+                      console.error("Failed to clear chat history:", error);
+                    }
+                  }
                   // タイマーもクリア
                   if (expressionTimerRef.current) {
                     clearTimeout(expressionTimerRef.current);

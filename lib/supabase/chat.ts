@@ -32,7 +32,7 @@ export async function saveChatMessage(
       user_id: userId,
       role,
       content
-    })
+    } as any)
     .select()
     .single()
 

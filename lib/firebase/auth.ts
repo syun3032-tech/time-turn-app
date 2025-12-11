@@ -7,13 +7,14 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth'
-import { auth } from './config'
+import { getAuth } from './config'
 
 /**
  * メールアドレスでサインアップ
  */
 export async function signUp(email: string, password: string) {
   try {
+    const auth = getAuth();
     const userCredential = await createUserWithEmailAndPassword(auth, email, password)
     return { user: userCredential.user, error: null }
   } catch (error: any) {
@@ -26,6 +27,7 @@ export async function signUp(email: string, password: string) {
  */
 export async function signIn(email: string, password: string) {
   try {
+    const auth = getAuth();
     const userCredential = await signInWithEmailAndPassword(auth, email, password)
     return { user: userCredential.user, error: null }
   } catch (error: any) {
@@ -38,6 +40,7 @@ export async function signIn(email: string, password: string) {
  */
 export async function signInWithGoogle() {
   try {
+    const auth = getAuth();
     const provider = new GoogleAuthProvider()
     const userCredential = await signInWithPopup(auth, provider)
     return { user: userCredential.user, error: null }
@@ -51,6 +54,7 @@ export async function signInWithGoogle() {
  */
 export async function signOut() {
   try {
+    const auth = getAuth();
     await firebaseSignOut(auth)
     return { error: null }
   } catch (error: any) {
@@ -62,6 +66,7 @@ export async function signOut() {
  * 現在のユーザーを取得
  */
 export function getCurrentUser(): User | null {
+  const auth = getAuth();
   return auth.currentUser
 }
 
@@ -69,5 +74,6 @@ export function getCurrentUser(): User | null {
  * 認証状態の変更を監視
  */
 export function onAuthChange(callback: (user: User | null) => void) {
+  const auth = getAuth();
   return onAuthStateChanged(auth, callback)
 }

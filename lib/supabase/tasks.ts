@@ -42,7 +42,7 @@ export async function getTaskTree(userId: string): Promise<TaskTreeNode[]> {
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
       .select('*')
-      .eq('goal_id', goal.id)
+      .eq('goal_id', (goal as any).id)
       .order('order_index', { ascending: true })
 
     if (projectsError) throw projectsError
@@ -53,7 +53,7 @@ export async function getTaskTree(userId: string): Promise<TaskTreeNode[]> {
       const { data: milestones, error: milestonesError } = await supabase
         .from('milestones')
         .select('*')
-        .eq('project_id', project.id)
+        .eq('project_id', (project as any).id)
         .order('order_index', { ascending: true })
 
       if (milestonesError) throw milestonesError
@@ -64,7 +64,7 @@ export async function getTaskTree(userId: string): Promise<TaskTreeNode[]> {
         const { data: tasks, error: tasksError } = await supabase
           .from('tasks')
           .select('*')
-          .eq('milestone_id', milestone.id)
+          .eq('milestone_id', (milestone as any).id)
           .order('order_index', { ascending: true })
 
         if (tasksError) throw tasksError
@@ -75,7 +75,7 @@ export async function getTaskTree(userId: string): Promise<TaskTreeNode[]> {
           const { data: microTasks, error: microTasksError } = await supabase
             .from('micro_tasks')
             .select('*')
-            .eq('task_id', task.id)
+            .eq('task_id', (task as any).id)
             .order('order_index', { ascending: true })
 
           if (microTasksError) throw microTasksError
@@ -116,12 +116,12 @@ export async function createGoal(
 ) {
   const { data: goal, error } = await supabase
     .from('goals')
-    .insert({ ...data, user_id: userId })
+    .insert({ ...data, user_id: userId } as any)
     .select()
     .single()
 
   if (error) throw error
-  return goal
+  return goal as any
 }
 
 /**
@@ -133,12 +133,12 @@ export async function createProject(
 ) {
   const { data: project, error } = await supabase
     .from('projects')
-    .insert({ ...data, user_id: userId })
+    .insert({ ...data, user_id: userId } as any)
     .select()
     .single()
 
   if (error) throw error
-  return project
+  return project as any
 }
 
 /**
@@ -150,12 +150,12 @@ export async function createMilestone(
 ) {
   const { data: milestone, error } = await supabase
     .from('milestones')
-    .insert({ ...data, user_id: userId })
+    .insert({ ...data, user_id: userId } as any)
     .select()
     .single()
 
   if (error) throw error
-  return milestone
+  return milestone as any
 }
 
 /**
@@ -167,12 +167,12 @@ export async function createTask(
 ) {
   const { data: task, error } = await supabase
     .from('tasks')
-    .insert({ ...data, user_id: userId })
+    .insert({ ...data, user_id: userId } as any)
     .select()
     .single()
 
   if (error) throw error
-  return task
+  return task as any
 }
 
 /**
@@ -184,12 +184,12 @@ export async function createMicroTask(
 ) {
   const { data: microTask, error } = await supabase
     .from('micro_tasks')
-    .insert({ ...data, user_id: userId })
+    .insert({ ...data, user_id: userId } as any)
     .select()
     .single()
 
   if (error) throw error
-  return microTask
+  return microTask as any
 }
 
 /**
@@ -199,7 +199,7 @@ export async function updateTaskStatus(
   taskId: string,
   status: '未着手' | '進行中' | '完了' | '保留'
 ) {
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('tasks')
     .update({ status })
     .eq('id', taskId)
@@ -211,7 +211,7 @@ export async function updateTaskStatus(
  * タスクの進捗を更新
  */
 export async function updateTaskProgress(taskId: string, progress: number) {
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('tasks')
     .update({ progress })
     .eq('id', taskId)
