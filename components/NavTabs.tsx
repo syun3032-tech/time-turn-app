@@ -3,7 +3,7 @@
 import { Flex, Link as ChakraLink, Text, Box } from "@chakra-ui/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FiActivity, FiHome, FiList, FiUser, FiLogOut } from "react-icons/fi";
+import { FiActivity, FiHome, FiList, FiUser, FiLogOut, FiSettings } from "react-icons/fi";
 import { signOut } from "@/lib/firebase/auth";
 
 const tabs = [
@@ -13,7 +13,11 @@ const tabs = [
   { href: "/profile", label: "プロフィール", icon: FiUser },
 ];
 
-export function NavTabs() {
+interface NavTabsProps {
+  onSettingsClick?: () => void;
+}
+
+export function NavTabs({ onSettingsClick }: NavTabsProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -29,8 +33,11 @@ export function NavTabs() {
   return (
     <Flex
       as="nav"
-      position="sticky"
+      position="fixed"
       bottom={0}
+      left={0}
+      right={0}
+      w="100%"
       bg="white"
       borderTop="1px solid"
       borderColor="gray.200"
@@ -38,7 +45,7 @@ export function NavTabs() {
       py={3}
       justify="space-between"
       align="center"
-      zIndex={10}
+      zIndex={1000}
     >
       {tabs.map((tab) => {
         const active = pathname?.startsWith(tab.href);
@@ -63,6 +70,25 @@ export function NavTabs() {
           </ChakraLink>
         );
       })}
+      {onSettingsClick && (
+        <Box
+          display="flex"
+          flexDir="column"
+          alignItems="center"
+          justifyContent="center"
+          gap={1}
+          fontSize="xs"
+          color="gray.500"
+          cursor="pointer"
+          onClick={onSettingsClick}
+          _hover={{ color: "teal.600" }}
+        >
+          <Box as={FiSettings} boxSize={6} strokeWidth={2} />
+          <Text fontSize="xs" fontWeight="normal">
+            設定
+          </Text>
+        </Box>
+      )}
       <Box
         display="flex"
         flexDir="column"

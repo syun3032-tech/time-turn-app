@@ -1,68 +1,71 @@
 /**
- * タスクツリーのローカルストレージ管理
+ * タスクツリーのFirestore管理（localStorageフォールバック付き）
  */
 
 import { TaskNode } from "@/types/task-tree";
+import { getTaskTreeFromFirestore, saveTaskTreeToFirestore } from "./firebase/firestore";
 
 const STORAGE_KEY = "task_tree_data";
 
-// 初期タスクツリー
-const initialTree: TaskNode[] = [
-  {
-    id: "goal-1",
-    title: "Goal: 国立理系に合格する",
-    type: "Goal",
-    startDate: "2024-04-01",
-    endDate: "2025-03-31",
-    children: [
-      {
-        id: "project-1",
-        title: "Project: 共通テスト対策",
-        type: "Project",
-        startDate: "2024-04-01",
-        endDate: "2025-01-15",
-        children: [
-          {
-            id: "milestone-1",
-            title: "Milestone: 数学基礎固め",
-            type: "Milestone",
-            children: [
-              { id: "task-1", title: "Task: 基礎問題集1-3章", type: "Task" },
-              { id: "task-2", title: "Task: 過去問1年分", type: "Task" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "goal-2",
-    title: "Goal: TOEIC 800点突破",
-    type: "Goal",
-    children: [
-      {
-        id: "project-3",
-        title: "Project: リスニング強化",
-        type: "Project",
-        children: [
-          {
-            id: "milestone-5",
-            title: "Milestone: Part1-4対策",
-            type: "Milestone",
-            children: [
-              { id: "task-10", title: "Task: 公式問題集Part1", type: "Task" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
+// 初期タスクツリー（新規ユーザー用）
+const initialTree: TaskNode[] = [];
 
 /**
- * タスクツリーを取得
+ * タスクツリーを取得（非同期・Firestore優先）
  */
-export function getTaskTree(): TaskNode[] {
+export async function getTaskTreeAsync(userId?: string): Promise<TaskNode[]> {
+  // userIdがある場合はFirestoreから取得
+  if (userId) {
+    try {
+      const tree = await getTaskTreeFromFirestore(userId);
+      if (tree && tree.length > 0) {
+        return tree as TaskNode[];
+      }
+      // Firestoreにデータがない場合、localStorageからの移行を試みる
+      const localTree = getTaskTreeFromLocal();
+      if (localTree.length > 0) {
+        // localStorageのデータをFirestoreに移行
+        await saveTaskTreeToFirestore(userId, localTree);
+        // 移行後、localStorageをクリア
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        return localTree;
+      }
+      return initialTree;
+    } catch (error) {
+      console.error("Failed to load task tree from Firestore:", error);
+      // フォールバック
+      return getTaskTreeFromLocal();
+    }
+  }
+
+  // userIdがない場合はlocalStorageから取得
+  return getTaskTreeFromLocal();
+}
+
+/**
+ * タスクツリーを保存（非同期・Firestore優先）
+ */
+export async function saveTaskTreeAsync(tree: TaskNode[], userId?: string): Promise<void> {
+  if (userId) {
+    try {
+      await saveTaskTreeToFirestore(userId, tree);
+      return;
+    } catch (error) {
+      console.error("Failed to save task tree to Firestore:", error);
+      // フォールバック
+    }
+  }
+
+  // localStorageに保存
+  saveTaskTreeToLocal(tree);
+}
+
+/**
+ * localStorageからタスクツリーを取得（同期・フォールバック用）
+ */
+function getTaskTreeFromLocal(): TaskNode[] {
   if (typeof window === "undefined") return initialTree;
 
   try {
@@ -71,23 +74,39 @@ export function getTaskTree(): TaskNode[] {
       return JSON.parse(stored);
     }
   } catch (error) {
-    console.error("Failed to load task tree:", error);
+    console.error("Failed to load task tree from localStorage:", error);
   }
 
   return initialTree;
 }
 
 /**
- * タスクツリーを保存
+ * localStorageにタスクツリーを保存（同期・フォールバック用）
  */
-export function saveTaskTree(tree: TaskNode[]): void {
+function saveTaskTreeToLocal(tree: TaskNode[]): void {
   if (typeof window === "undefined") return;
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tree));
   } catch (error) {
-    console.error("Failed to save task tree:", error);
+    console.error("Failed to save task tree to localStorage:", error);
   }
+}
+
+/**
+ * 同期版（後方互換性のため残す - 非推奨）
+ * @deprecated useTaskTreeAsync を使用してください
+ */
+export function getTaskTree(): TaskNode[] {
+  return getTaskTreeFromLocal();
+}
+
+/**
+ * 同期版（後方互換性のため残す - 非推奨）
+ * @deprecated useTaskTreeAsync を使用してください
+ */
+export function saveTaskTree(tree: TaskNode[]): void {
+  saveTaskTreeToLocal(tree);
 }
 
 /**

@@ -1,13 +1,13 @@
 "use client";
 
-import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Input, Dialog, Progress, Stack, Textarea, Switch } from "@chakra-ui/react";
+import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Dialog, Progress, Switch } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { FiChevronRight, FiChevronDown, FiCalendar, FiCheck } from "react-icons/fi";
+import { FiChevronRight, FiChevronDown, FiCalendar } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { getTaskTree, saveTaskTree, generateNodeId } from "@/lib/task-tree-storage";
+import { getTaskTreeAsync, saveTaskTreeAsync } from "@/lib/task-tree-storage";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveCompletedTask } from "@/lib/firebase/firestore";
@@ -135,11 +135,18 @@ const initialTreeBackup = [
   },
 ];
 
-// プロジェクトの進捗データ（マイルストーン）
-const projectMilestones = [
-  { title: "Project: 共通テスト対策", progress: 60 },
-  { title: "Project: 英語基礎", progress: 40 },
-];
+// 子要素の完了率を計算する関数
+function calculateProgress(node: any): number {
+  if (!node.children || node.children.length === 0) {
+    // 子がない場合は、自身がアーカイブ済みなら100%、そうでなければ0%
+    return node.archived ? 100 : 0;
+  }
+
+  // 子要素の進捗を再帰的に計算
+  const childProgresses = node.children.map((child: any) => calculateProgress(child));
+  const totalProgress = childProgresses.reduce((sum: number, p: number) => sum + p, 0);
+  return Math.round(totalProgress / node.children.length);
+}
 
 interface TreeNodeProps {
   node: any;
@@ -160,6 +167,11 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   const isExpanded = expandedNodes.has(node.id);
   const isHighlighted = highlightedId === node.id;
   const nodeRef = useRef<HTMLDivElement>(null);
+
+  // Tempo風: 子要素があるかどうかで表示を切り替え
+  const showProgressBar = hasChildren; // 子があれば進捗バー
+  const showCheckbox = !hasChildren && !isArchived; // 子がなければチェックボックス
+  const progress = hasChildren ? calculateProgress(node) : 0;
 
   // Check if any child is expanded
   const hasExpandedChild = hasChildren && node.children.some((child: any) => expandedNodes.has(child.id));
@@ -223,17 +235,54 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 {node.title}
               </Text>
 
+              {/* 進捗バー（子要素がある場合） */}
+              {showProgressBar && (
+                <Box w="full">
+                  <HStack justify="space-between" mb={1}>
+                    <Text fontSize="xs" color="gray.500">進捗</Text>
+                    <Text fontSize="xs" fontWeight="bold" color={progress === 100 ? "green.500" : "teal.500"}>{progress}%</Text>
+                  </HStack>
+                  <Progress.Root value={progress} borderRadius="md" size="sm">
+                    <Progress.Track bg="gray.200">
+                      <Progress.Range bg={progress === 100 ? "green.500" : "teal.500"} />
+                    </Progress.Track>
+                  </Progress.Root>
+                </Box>
+              )}
+
+              {/* チェックボックス（子要素がない場合） */}
+              {showCheckbox && (
+                <HStack gap={2}>
+                  <Box
+                    as="button"
+                    w="24px"
+                    h="24px"
+                    borderRadius="md"
+                    border="2px solid"
+                    borderColor="gray.300"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    _hover={{ borderColor: "green.400", bg: "green.50" }}
+                    onClick={(e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      onCompleteTask(node);
+                    }}
+                  >
+                    {/* 空のチェックボックス */}
+                  </Box>
+                  <Text fontSize="sm" color="gray.500">未完了</Text>
+                </HStack>
+              )}
+
               {isTask && (
                 <HStack gap={2} flexWrap="wrap">
                   <Box w="8px" h="8px" borderRadius="full" bg={node.ai ? "pink.400" : "gray.300"} />
                   {node.ai && <Badge size="sm" colorScheme="pink">AI実行可</Badge>}
-                  <Badge size="sm" colorScheme={node.status === "進行中" ? "blue" : "gray"}>
-                    {node.status}
-                  </Badge>
                 </HStack>
               )}
 
-              {!isTask && (
+              {!isTask && !showProgressBar && (
                 <Flex gap={2} fontSize={{ base: "2xs", md: "xs" }} color="gray.500" flexWrap="wrap">
                   <Text>OKR</Text>
                   <Text>KPI</Text>
@@ -242,11 +291,11 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               )}
 
               {/* Period display */}
-              {(node.startDate || node.endDate) && (
+              {node.endDate && (
                 <HStack gap={1} fontSize={{ base: "2xs", md: "xs" }} color="teal.600">
                   <FiCalendar />
                   <Text>
-                    {node.startDate || "未設定"} 〜 {node.endDate || "未設定"}
+                    期限: {node.endDate}
                   </Text>
                 </HStack>
               )}
@@ -263,7 +312,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               >
                 <HStack gap={1}>
                   <FiCalendar />
-                  <Text>{node.startDate || node.endDate ? "期間を変更" : "期間を設定"}</Text>
+                  <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
                 </HStack>
               </Button>
 
@@ -273,20 +322,6 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                     AI実行へ
                   </Button>
                 </Link>
-              )}
-
-              {isTask && !isArchived && (
-                <Button
-                  size="xs"
-                  colorScheme="green"
-                  w="full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCompleteTask(node);
-                  }}
-                >
-                  <FiCheck /> 完了
-                </Button>
               )}
 
               {isArchived && (
@@ -366,11 +401,6 @@ function TasksPageContent() {
   const [nodeCounter, setNodeCounter] = useState(20); // Start from 20 since we have 19 tasks
   const [showArchived, setShowArchived] = useState(false);
 
-  // 振り返りモーダル
-  const [isReflectionModalOpen, setIsReflectionModalOpen] = useState(false);
-  const [completingTask, setCompletingTask] = useState<any>(null);
-  const [timeSpent, setTimeSpent] = useState<number>(0);
-  const [reflectionNote, setReflectionNote] = useState("");
 
   // 認証チェック
   useEffect(() => {
@@ -381,16 +411,26 @@ function TasksPageContent() {
 
   // タスクツリーを読み込み
   useEffect(() => {
-    const loadedTree = getTaskTree();
-    setTree(loadedTree);
-  }, []);
+    if (!user) return;
+
+    const loadTree = async () => {
+      const loadedTree = await getTaskTreeAsync(user.uid);
+      setTree(loadedTree);
+    };
+
+    loadTree();
+  }, [user]);
 
   // タスクツリーが変更されたら保存
+  const saveTreeRef = useRef(tree);
   useEffect(() => {
-    if (tree !== initialTreeBackup) {
-      saveTaskTree(tree);
-    }
-  }, [tree]);
+    // 初回レンダリングはスキップ
+    if (tree === saveTreeRef.current) return;
+    if (!user) return;
+
+    saveTreeRef.current = tree;
+    saveTaskTreeAsync(tree, user.uid);
+  }, [tree, user]);
 
   // ハイライト対象のノードとその親を自動展開
   useEffect(() => {
@@ -418,7 +458,6 @@ function TasksPageContent() {
   // Period modal state
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [tempStartDate, setTempStartDate] = useState<Date | null>(null);
   const [tempEndDate, setTempEndDate] = useState<Date | null>(null);
 
   const handleToggle = (nodeId: string) => {
@@ -494,8 +533,7 @@ function TasksPageContent() {
 
   const handleOpenPeriodModal = (node: any) => {
     setSelectedNode(node);
-    // Convert string dates to Date objects
-    setTempStartDate(node.startDate ? new Date(node.startDate) : null);
+    // Convert string date to Date object
     setTempEndDate(node.endDate ? new Date(node.endDate) : null);
     setIsPeriodModalOpen(true);
   };
@@ -503,7 +541,7 @@ function TasksPageContent() {
   const handleSavePeriod = () => {
     if (!selectedNode) return;
 
-    // Convert Date objects to string format (YYYY-MM-DD)
+    // Convert Date object to string format (YYYY-MM-DD)
     const formatDate = (date: Date | null) => {
       if (!date) return "";
       const year = date.getFullYear();
@@ -512,13 +550,12 @@ function TasksPageContent() {
       return `${year}-${month}-${day}`;
     };
 
-    // Recursively find and update the node's period
+    // Recursively find and update the node's endDate
     const updateTree = (nodes: any[]): any[] => {
       return nodes.map((node) => {
         if (node.id === selectedNode.id) {
           return {
             ...node,
-            startDate: formatDate(tempStartDate),
             endDate: formatDate(tempEndDate),
           };
         } else if (node.children) {
@@ -536,15 +573,8 @@ function TasksPageContent() {
     setSelectedNode(null);
   };
 
-  const handleCompleteTask = (node: any) => {
-    setCompletingTask(node);
-    setTimeSpent(0);
-    setReflectionNote("");
-    setIsReflectionModalOpen(true);
-  };
-
-  const handleSaveCompletion = async () => {
-    if (!user || !completingTask) return;
+  const handleCompleteTask = async (node: any) => {
+    if (!user) return;
 
     try {
       // タスクタイプを取得
@@ -557,39 +587,34 @@ function TasksPageContent() {
 
       // Firestoreに保存
       await saveCompletedTask(user.uid, {
-        taskId: completingTask.id,
-        taskTitle: completingTask.title,
-        taskType: getTaskType(completingTask.title),
+        taskId: node.id,
+        taskTitle: node.title,
+        taskType: getTaskType(node.title),
         completedAt: new Date(),
-        timeSpent: timeSpent || undefined,
-        reflectionNote: reflectionNote || undefined,
-        aiCapable: completingTask.ai || false
+        aiCapable: node.ai || false
       });
 
       // ツリーからアーカイブに移動
       const archiveNode = (nodes: any[]): any[] => {
-        return nodes.map((node) => {
-          if (node.id === completingTask.id) {
+        return nodes.map((n) => {
+          if (n.id === node.id) {
             return {
-              ...node,
+              ...n,
               archived: true,
               completedAt: new Date().toISOString()
             };
-          } else if (node.children) {
+          } else if (n.children) {
             return {
-              ...node,
-              children: archiveNode(node.children)
+              ...n,
+              children: archiveNode(n.children)
             };
           }
-          return node;
+          return n;
         });
       };
 
       setTree(archiveNode(tree));
-      setIsReflectionModalOpen(false);
-      setCompletingTask(null);
-
-      console.log("タスク完了！ログに記録しました");
+      console.log("タスク完了！");
     } catch (error) {
       console.error("Failed to complete task:", error);
       alert("タスクの完了処理に失敗しました");
@@ -615,12 +640,12 @@ function TasksPageContent() {
           <HStack>
             <Text fontSize="sm">完了済みを表示</Text>
             <Switch.Root checked={showArchived} onCheckedChange={(e) => setShowArchived(e.checked)}>
+              <Switch.HiddenInput />
               <Switch.Control>
                 <Switch.Thumb />
               </Switch.Control>
             </Switch.Root>
           </HStack>
-          <Badge colorScheme="purple" fontSize={{ base: "2xs", md: "xs" }}>AI実行ラベル</Badge>
         </HStack>
       </Flex>
 
@@ -639,41 +664,19 @@ function TasksPageContent() {
           />
         ))}
 
-        {/* Add Goal button */}
-        <Button
-          size="sm"
-          variant="outline"
-          colorScheme="teal"
-          w="full"
-          onClick={handleAddGoal}
-        >
-          + Goalを追加
-        </Button>
+        {/* Add Goal button - only show when nothing is expanded */}
+        {expandedNodes.size === 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            colorScheme="teal"
+            w="full"
+            onClick={handleAddGoal}
+          >
+            + Goalを追加
+          </Button>
+        )}
       </VStack>
-
-      {/* 道のりバー / マイルストーン */}
-      <Card.Root mt={6} mb={4}>
-        <Card.Header>
-          <Heading size="sm">道のりバー / マイルストーン</Heading>
-        </Card.Header>
-        <Card.Body>
-          <Stack gap={3}>
-            {projectMilestones.map((m) => (
-              <Box key={m.title}>
-                <Flex justify="space-between" mb={1}>
-                  <Text fontWeight="semibold" fontSize="sm">{m.title}</Text>
-                  <Text fontSize="sm" color="gray.600">{m.progress}%</Text>
-                </Flex>
-                <Progress.Root value={m.progress} borderRadius="md" size="sm">
-                  <Progress.Track bg="gray.100">
-                    <Progress.Range bg="teal.500" />
-                  </Progress.Track>
-                </Progress.Root>
-              </Box>
-            ))}
-          </Stack>
-        </Card.Body>
-      </Card.Root>
 
       <NavTabs />
 
@@ -683,21 +686,11 @@ function TasksPageContent() {
         <Dialog.Positioner>
           <Dialog.Content maxW="400px">
             <Dialog.Header>
-              <Dialog.Title>期間を設定</Dialog.Title>
+              <Dialog.Title>期限を設定</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="stretch" gap={4}>
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>開始日</Text>
-                  <DatePicker
-                    selected={tempStartDate}
-                    onChange={(date) => setTempStartDate(date)}
-                    dateFormat="yyyy/MM/dd"
-                    inline
-                    locale="ja"
-                  />
-                </Box>
                 <Box>
                   <Text fontSize="sm" fontWeight="semibold" mb={2}>終了日</Text>
                   <DatePicker
@@ -724,57 +717,6 @@ function TasksPageContent() {
         </Dialog.Positioner>
       </Dialog.Root>
 
-      {/* Reflection Modal */}
-      <Dialog.Root open={isReflectionModalOpen} onOpenChange={(e) => setIsReflectionModalOpen(e.open)}>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="500px">
-            <Dialog.Header>
-              <Dialog.Title>タスク完了の振り返り</Dialog.Title>
-              <Dialog.CloseTrigger />
-            </Dialog.Header>
-            <Dialog.Body>
-              <VStack align="stretch" gap={4}>
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>タスク名</Text>
-                  <Text fontSize="sm" color="gray.600">{completingTask?.title}</Text>
-                </Box>
-
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>かかった時間（分）</Text>
-                  <Input
-                    type="number"
-                    value={timeSpent}
-                    onChange={(e) => setTimeSpent(Number(e.target.value))}
-                    placeholder="例: 30"
-                  />
-                </Box>
-
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>振り返りメモ</Text>
-                  <Textarea
-                    value={reflectionNote}
-                    onChange={(e) => setReflectionNote(e.target.value)}
-                    placeholder="どうだったか、学んだことなど..."
-                    rows={4}
-                  />
-                </Box>
-
-              </VStack>
-            </Dialog.Body>
-            <Dialog.Footer>
-              <HStack w="full" justify="flex-end" gap={2}>
-                <Button variant="outline" onClick={() => setIsReflectionModalOpen(false)}>
-                  キャンセル
-                </Button>
-                <Button colorScheme="green" onClick={handleSaveCompletion}>
-                  完了して記録
-                </Button>
-              </HStack>
-            </Dialog.Footer>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Dialog.Root>
     </Box>
   );
 }

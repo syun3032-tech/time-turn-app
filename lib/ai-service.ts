@@ -152,69 +152,40 @@ async function callAnthropic(prompt: string, mode: APIKeyMode = "chat") {
 /**
  * Google Gemini API を呼び出し
  */
-async function callGemini(prompt: string, mode: APIKeyMode = "chat") {
-  // モードに応じてAPIキーを選択
-  const apiKey = mode === "chat"
-    ? process.env.NEXT_PUBLIC_GEMINI_API_KEY
-    : process.env.NEXT_PUBLIC_GEMINI_API_KEY_TASK || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      "Gemini APIキーが設定されていません。環境変数 NEXT_PUBLIC_GEMINI_API_KEY を設定してください。"
-    );
-  }
-
+async function callGemini(prompt: string, _mode: APIKeyMode = "chat") {
+  // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2000,
-          },
-        }),
-      }
-    );
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Gemini API Error: ${error.error?.message || "Unknown error"}`);
+      throw new Error(error.error || `API Error: ${response.status}`);
     }
 
     const data = await response.json();
-    const candidate = data.candidates[0];
-    const finishReason = candidate.finishReason;
+
+    if (!data.success) {
+      throw new Error(data.error || "API request failed");
+    }
 
     // デバッグ用: finish_reasonをログ出力
-    console.log("Gemini API finish_reason:", finishReason);
-
-    // finish_reasonが"STOP"以外の場合は警告
-    if (finishReason && finishReason !== "STOP") {
-      console.warn(`Gemini API finished with reason: ${finishReason}`);
-      if (finishReason === "MAX_TOKENS") {
-        console.warn("Response was truncated due to MAX_TOKENS limit");
-      }
+    if (data.finishReason) {
+      console.log("Gemini API finish_reason:", data.finishReason);
     }
 
     return {
       success: true,
-      content: candidate.content.parts[0].text,
+      content: data.content,
       provider: "gemini" as AIProvider,
-      finishReason: finishReason,
+      finishReason: data.finishReason,
     };
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -342,61 +313,37 @@ async function chatWithAnthropic(
 async function chatWithGemini(
   messages: Array<{ role: "user" | "assistant"; content: string }>
 ) {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Gemini APIキーが設定されていません。");
-  }
-
+  // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    // Gemini APIは会話履歴の形式が異なるため変換
-    const geminiContents = messages.map((msg) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    }));
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: geminiContents,
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2000,
-          },
-        }),
-      }
-    );
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messages }),
+    });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Gemini API Error: ${error.error?.message}`);
+      throw new Error(error.error || `API Error: ${response.status}`);
     }
 
     const data = await response.json();
-    const candidate = data.candidates[0];
-    const finishReason = candidate.finishReason;
+
+    if (!data.success) {
+      throw new Error(data.error || "API request failed");
+    }
 
     // デバッグ用: finish_reasonをログ出力
-    console.log("Gemini API finish_reason:", finishReason);
-
-    // finish_reasonが"STOP"以外の場合は警告
-    if (finishReason && finishReason !== "STOP") {
-      console.warn(`Gemini API finished with reason: ${finishReason}`);
-      if (finishReason === "MAX_TOKENS") {
-        console.warn("Response was truncated due to MAX_TOKENS limit");
-      }
+    if (data.finishReason) {
+      console.log("Gemini API finish_reason:", data.finishReason);
     }
 
     return {
       success: true,
-      content: candidate.content.parts[0].text,
+      content: data.content,
       provider: "gemini" as AIProvider,
-      finishReason: finishReason,
+      finishReason: data.finishReason,
     };
   } catch (error) {
     return {
@@ -600,66 +547,42 @@ async function chatWithAnthropicWithMode(
 
 async function chatWithGeminiWithMode(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-  mode: APIKeyMode
+  _mode: APIKeyMode
 ) {
-  const apiKey = mode === "chat"
-    ? process.env.NEXT_PUBLIC_GEMINI_API_KEY
-    : process.env.NEXT_PUBLIC_GEMINI_API_KEY_TASK || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Gemini APIキーが設定されていません。");
-  }
-
+  // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    const geminiContents = messages.map((msg) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    }));
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: geminiContents,
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2000,
-          },
-        }),
-      }
-    );
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messages }),
+    });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Gemini API Error: ${error.error?.message}`);
+      throw new Error(error.error || `API Error: ${response.status}`);
     }
 
     const data = await response.json();
-    const candidate = data.candidates[0];
-    const finishReason = candidate.finishReason;
+
+    if (!data.success) {
+      throw new Error(data.error || "API request failed");
+    }
 
     // デバッグ用: finish_reasonをログ出力
-    console.log("Gemini API finish_reason:", finishReason);
-
-    // finish_reasonが"STOP"以外の場合は警告
-    if (finishReason && finishReason !== "STOP") {
-      console.warn(`Gemini API finished with reason: ${finishReason}`);
-      if (finishReason === "MAX_TOKENS") {
-        console.warn("Response was truncated due to MAX_TOKENS limit");
-      }
+    if (data.finishReason) {
+      console.log("Gemini API finish_reason:", data.finishReason);
     }
 
     return {
       success: true,
-      content: candidate.content.parts[0].text,
+      content: data.content,
       provider: "gemini" as AIProvider,
-      finishReason: finishReason,
+      finishReason: data.finishReason,
     };
   } catch (error) {
+    console.error("Chat API Error:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

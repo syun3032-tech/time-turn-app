@@ -6,9 +6,13 @@ export interface UserProfile {
   uid: string
   email: string
   displayName?: string
+  nickname?: string
+  birthDate?: string
+  occupation?: string
   personalityType?: string
   preferences?: Record<string, any>
   analysisResult?: Record<string, any>
+  profileCompleted: boolean
   createdAt: Date
   updatedAt: Date
 }

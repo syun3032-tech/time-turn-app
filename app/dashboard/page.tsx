@@ -1,31 +1,42 @@
 "use client";
 
-import { Box, Flex, Heading, Text, VStack, Input, Button, HStack, IconButton, Badge, Card, Progress, Slider, Stack } from "@chakra-ui/react";
+import { Box, Text, VStack, Input, Button, HStack, Badge, Card } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
 import { CharacterAvatar, getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
-import { CharacterMessage } from "@/components/CharacterMessage";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { FiActivity } from "react-icons/fi";
 import { Dialog } from "@chakra-ui/react";
 import { chatWithAISeamless, AIProvider } from "@/lib/ai-service";
-import { getTaskTree, saveTaskTree, serializeTreeForAI, addNodeToTree, generateNodeId } from "@/lib/task-tree-storage";
+import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree, generateNodeId } from "@/lib/task-tree-storage";
 import { TaskNode } from "@/types/task-tree";
-import { getInterestStagePrompt, getProposalStagePrompt, getEnhancedTaskBreakdownPrompt } from "@/lib/prompts";
+import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, clearChatHistory } from "@/lib/firebase/firestore";
+import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile } from "@/lib/firebase/firestore";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
+import { ProfileSetupModal } from "@/components/ProfileSetupModal";
+import { SettingsModal } from "@/components/SettingsModal";
+import type { UserProfile } from "@/lib/firebase/firestore-types";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-const sampleTasks = [
-  { title: "基礎問題集1-3章", complete: false },
-  { title: "英単語100個", complete: true },
-];
+// ヒアリング進捗を追跡する型
+interface HearingProgress {
+  why: boolean;       // なぜやりたいか
+  current: boolean;   // 現状
+  target: boolean;    // 目標の詳細
+  timeline: boolean;  // いつまでに
+}
+
+const HEARING_ITEMS = [
+  { key: "why", label: "Why（動機）", question: "なんでそれやりたいの？きっかけは？" },
+  { key: "current", label: "現状", question: "今はどんな状況？これまでやったことある？" },
+  { key: "target", label: "ゴール", question: "具体的にどうなりたい？どこまで目指してる？" },
+  { key: "timeline", label: "期限", question: "いつまでに達成したい？" },
+] as const;
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -35,15 +46,53 @@ export default function DashboardPage() {
   const [characterMessage, setCharacterMessage] = useState("今日はどのタスクから行く？");
   const [characterExpression, setCharacterExpression] = useState<Expression>("normal"); // 初期はノーマル
   const [isLoading, setIsLoading] = useState(false);
-  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false); // 会話履歴モーダル
   const [provider] = useState<AIProvider>("gemini");
+  // ステージ: normal → hearing → proposal → output
   const [taskBreakdownStage, setTaskBreakdownStage] = useState<
-    "normal" | "interest" | "proposal" | "breakdown"
+    "normal" | "hearing" | "proposal" | "output"
   >("normal");
   const [taskTree, setTaskTree] = useState<TaskNode[]>([]);
-  const [goalContext, setGoalContext] = useState<string>(""); // 会話のサマリー
+  const [goalContext, setGoalContext] = useState<string>(""); // 最初の目標
+
+  // ヒアリングで収集した情報
+  const [hearingSummary, setHearingSummary] = useState({
+    goal: "",
+    why: "",
+    current: "",
+    target: "",
+    timeline: "",
+  });
   const expressionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ヒアリング進捗追跡
+  const [hearingProgress, setHearingProgress] = useState<HearingProgress>({
+    why: false,
+    current: false,
+    target: false,
+    timeline: false,
+  });
+
+  // プロフィール関連
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  // ヒアリング進捗率を計算
+  const hearingPercentage = Math.round(
+    (Object.values(hearingProgress).filter(Boolean).length / 4) * 100
+  );
+
+  // 次に聞くべき項目を取得
+  const getNextHearingItem = () => {
+    for (const item of HEARING_ITEMS) {
+      if (!hearingProgress[item.key as keyof HearingProgress]) {
+        return item;
+      }
+    }
+    return null;
+  };
 
   // 認証チェック
   useEffect(() => {
@@ -52,11 +101,47 @@ export default function DashboardPage() {
     }
   }, [user, loading, router]);
 
+  // プロフィールを読み込み
+  useEffect(() => {
+    if (!user) {
+      setProfileLoading(false);
+      return;
+    }
+
+    const loadProfile = async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (profile) {
+          setUserProfile(profile);
+          // プロフィール未完了なら設定モーダルを表示
+          if (!profile.profileCompleted) {
+            setShowProfileSetup(true);
+          }
+        } else {
+          // プロフィールが存在しない場合は初回設定モーダルを表示
+          setShowProfileSetup(true);
+        }
+      } catch (error) {
+        console.error("Failed to load profile:", error);
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [user]);
+
   // タスクツリーを読み込み
   useEffect(() => {
-    const tree = getTaskTree();
-    setTaskTree(tree);
-  }, []);
+    if (!user) return;
+
+    const loadTaskTree = async () => {
+      const tree = await getTaskTreeAsync(user.uid);
+      setTaskTree(tree);
+    };
+
+    loadTaskTree();
+  }, [user]);
 
   // 会話履歴をFirestoreから読み込み
   useEffect(() => {
@@ -111,7 +196,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const handleReflectToTaskTree = () => {
+  const handleReflectToTaskTree = async () => {
     if (messages.length === 0) return;
 
     // 最後のAIメッセージを取得
@@ -174,7 +259,7 @@ export default function DashboardPage() {
     // タスクツリーに追加
     const updatedTree = addNodeToTree(taskTree, parentId, newNode);
     setTaskTree(updatedTree);
-    saveTaskTree(updatedTree);
+    await saveTaskTreeAsync(updatedTree, user?.uid);
 
     // 成功メッセージ
     setCharacterMessage(`「${nodeTitle}」をタスクツリーに追加しました！タスクページに移動します。`);
@@ -193,6 +278,112 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Failed to sign out:", error);
     }
+  };
+
+  // 初回プロフィール設定完了
+  const handleProfileSetupComplete = async (data: { nickname: string; occupation: string }) => {
+    if (!user) return;
+
+    try {
+      if (userProfile) {
+        // 既存プロフィールを更新
+        await updateUserProfile(user.uid, {
+          nickname: data.nickname,
+          occupation: data.occupation,
+          profileCompleted: true,
+        });
+      } else {
+        // 新規プロフィール作成
+        await createUserProfile(user.uid, user.email || "", {
+          nickname: data.nickname,
+          occupation: data.occupation,
+          profileCompleted: true,
+        });
+      }
+
+      // ローカル状態を更新
+      const updatedProfile = await getUserProfile(user.uid);
+      setUserProfile(updatedProfile);
+      setShowProfileSetup(false);
+
+      // 歓迎メッセージ
+      setCharacterMessage(`${data.nickname}さん、よろしくね！今日はどのタスクから行く？`);
+    } catch (error) {
+      console.error("Failed to save profile:", error);
+    }
+  };
+
+  // 設定保存
+  const handleSettingsSave = async (data: { nickname: string; occupation: string }) => {
+    if (!user) return;
+
+    try {
+      await updateUserProfile(user.uid, {
+        nickname: data.nickname,
+        occupation: data.occupation,
+      });
+
+      // ローカル状態を更新
+      const updatedProfile = await getUserProfile(user.uid);
+      setUserProfile(updatedProfile);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      throw error;
+    }
+  };
+
+  // ユーザーの返答からヒアリング項目を検出して更新
+  // 1メッセージにつき最大1項目だけ検出（急に100%にならないように）
+  const detectAndUpdateHearing = (userMsg: string) => {
+    const newProgress = { ...hearingProgress };
+    const newSummary = { ...hearingSummary };
+    let detected = false;
+
+    // Why（動機）の検出 - AIが「なんで」「きっかけ」を聞いた後の返答
+    // より具体的なパターンに限定
+    if (!detected && !hearingProgress.why) {
+      // 理由を述べるパターン: 〜だから、〜ので、〜のために、〜って思って
+      if (/だから|ので|のため|って思|と思って|理由は|きっかけは/.test(userMsg)) {
+        newProgress.why = true;
+        newSummary.why = userMsg;
+        detected = true;
+      }
+    }
+
+    // 現状の検出 - AIが「今どんな状況」を聞いた後の返答
+    if (!detected && !hearingProgress.current) {
+      // 現状を述べるパターン: 今は〜、まだ〜、〜したことない、〜やってる
+      if (/今は|まだ|したことない|やってない|やってる|始めた|経験/.test(userMsg)) {
+        newProgress.current = true;
+        newSummary.current = userMsg;
+        detected = true;
+      }
+    }
+
+    // ゴールの検出 - AIが「どこまで目指す」を聞いた後の返答
+    if (!detected && !hearingProgress.target) {
+      // 目標を述べるパターン: 〜になりたい、〜レベル、〜できるように
+      if (/になりたい|レベル|できるように|合格したい|受かりたい|目指し/.test(userMsg)) {
+        newProgress.target = true;
+        newSummary.target = userMsg;
+        detected = true;
+      }
+    }
+
+    // 期限の検出 - AIが「いつまでに」を聞いた後の返答
+    if (!detected && !hearingProgress.timeline) {
+      // 期限を述べるパターン: 〜月まで、来年、今年中、〜ヶ月で
+      if (/月まで|年まで|来年|今年|ヶ月|週間|日まで|以内/.test(userMsg)) {
+        newProgress.timeline = true;
+        newSummary.timeline = userMsg;
+        detected = true;
+      }
+    }
+
+    setHearingProgress(newProgress);
+    setHearingSummary(newSummary);
+
+    return newProgress;
   };
 
   const handleSendMessage = async () => {
@@ -214,77 +405,67 @@ export default function DashboardPage() {
 
     try {
       let systemPrompt = "";
-      let contextToSend = newMessages;
+      let contextToSend: Message[] = newMessages;
 
-      // === Stage 1: Normal → Interest ===
-      // キーワード検出で interest stage に移行
-      const hasTaskKeyword = /やりたい|成したい|達成したい|目標|勉強したい|学びたい|習得したい|始めたい|作りたい|実現したい|タスク|分解|計画|ステップ/.test(message);
+      // === Stage 1: Normal → Hearing ===
+      // キーワード検出で hearing stage に移行
+      const hasTaskKeyword = /やりたい|成したい|達成したい|目標|勉強したい|学びたい|習得したい|始めたい|作りたい|実現したい|タスク|分解|計画|ステップ|行きたい|なりたい|受かりたい/.test(message);
 
       if (taskBreakdownStage === "normal" && hasTaskKeyword) {
-        setTaskBreakdownStage("interest");
+        setTaskBreakdownStage("hearing");
+        setGoalContext(message);
+        setHearingSummary(prev => ({ ...prev, goal: message }));
+
+        // 最初は興味を示す
         systemPrompt = getInterestStagePrompt();
-        setGoalContext(message); // 最初の目標を保存
       }
-      // === Stage 2: Interest → Proposal ===
-      // Interest段階で2往復以上したら提案段階へ
-      else if (taskBreakdownStage === "interest") {
-        const interestMessages = newMessages.filter(m => m.role === "user" || m.role === "assistant");
+      // === Stage 2: Hearing ===
+      // ヒアリング中 - 進捗を更新して次の質問を促す
+      else if (taskBreakdownStage === "hearing") {
+        // ユーザーの返答からヒアリング情報を検出
+        const updatedProgress = detectAndUpdateHearing(message);
 
-        // 2往復（4メッセージ）以上で提案段階へ
-        if (interestMessages.length >= 4) {
+        // 進捗率を計算
+        const progressCount = Object.values(updatedProgress).filter(Boolean).length;
+        const newPercentage = Math.round((progressCount / 4) * 100);
+
+        // 100%になったらproposal段階へ
+        if (newPercentage === 100) {
           setTaskBreakdownStage("proposal");
-
-          // 会話のサマリーを作成
-          const userGoals = interestMessages
-            .filter(m => m.role === "user")
-            .map(m => m.content)
-            .join("、");
-          setGoalContext(userGoals);
-
-          systemPrompt = getProposalStagePrompt(userGoals);
+          systemPrompt = getHearingCompletePrompt({
+            ...hearingSummary,
+            why: hearingSummary.why || message,
+          });
         } else {
-          systemPrompt = getInterestStagePrompt();
+          // まだヒアリング中 - 次の質問を促す
+          const nextItem = HEARING_ITEMS.find(
+            item => !updatedProgress[item.key as keyof HearingProgress]
+          ) || null;
+
+          systemPrompt = getHearingPrompt(
+            updatedProgress,
+            nextItem,
+            goalContext
+          );
         }
       }
-      // === Stage 3: Proposal → Breakdown ===
-      // ユーザーが同意したら本格的なタスク分解へ
+      // === Stage 3: Proposal → Output ===
+      // ユーザーが同意したらタスク出力
       else if (taskBreakdownStage === "proposal") {
-        const userAgreed = /うん|お願い|いいね|そうだね|やろう|はい|yes|ok|オッケー|よろしく/.test(message.toLowerCase());
+        const userAgreed = /うん|お願い|いいね|そうだね|やろう|はい|yes|ok|オッケー|よろしく|分解/.test(message.toLowerCase());
 
         if (userAgreed) {
-          setTaskBreakdownStage("breakdown");
-
-          // タスクツリー情報を含める
-          if (taskTree.length > 0) {
-            const treeContext = serializeTreeForAI(taskTree);
-            const enhancedPrompt = getEnhancedTaskBreakdownPrompt(
-              `${treeContext}\n\n【ユーザーの目標】\n${goalContext}`
-            );
-
-            // システムプロンプトとして追加
-            contextToSend = [
-              { role: "user", content: enhancedPrompt },
-              ...newMessages,
-            ];
-          } else {
-            systemPrompt = getEnhancedTaskBreakdownPrompt(goalContext);
-          }
+          setTaskBreakdownStage("output");
+          systemPrompt = getTaskOutputPrompt(hearingSummary);
         } else {
-          // まだ提案段階
-          systemPrompt = getProposalStagePrompt(goalContext);
+          // まだ同意を待つ
+          systemPrompt = getHearingCompletePrompt(hearingSummary);
         }
       }
-      // === Stage 4: Breakdown ===
-      // 本格的なタスク分解中
-      else if (taskBreakdownStage === "breakdown") {
-        if (taskTree.length > 0) {
-          const treeContext = serializeTreeForAI(taskTree);
-          systemPrompt = getEnhancedTaskBreakdownPrompt(
-            `${treeContext}\n\n【ユーザーの目標】\n${goalContext}`
-          );
-        } else {
-          systemPrompt = getEnhancedTaskBreakdownPrompt(goalContext);
-        }
+      // === Stage 4: Output ===
+      // タスク出力モード
+      else if (taskBreakdownStage === "output") {
+        systemPrompt = getTaskOutputPrompt(hearingSummary);
       }
 
       // Few-shot examples を先頭に追加（AIに短い会話を学習させる）
@@ -292,21 +473,20 @@ export default function DashboardPage() {
         { role: "user", content: "阪大行きたい" },
         { role: "assistant", content: "いいね！なんで？きっかけあるの？" },
         { role: "user", content: "周りにイキれるから" },
-        { role: "assistant", content: "そうなの！？ なんでイキリたいの？今に満足できてない感じ？" },
+        { role: "assistant", content: "そうなの！？ なんでイキリたいの？" },
       ];
 
       // システムプロンプトがある場合は先頭に追加
-      if (systemPrompt && contextToSend[0]?.content !== systemPrompt) {
+      if (systemPrompt) {
         contextToSend = [
           { role: "user", content: systemPrompt },
           ...fewShotExamples,
-          ...contextToSend,
+          ...newMessages,
         ];
       } else {
-        // システムプロンプトがない場合もFew-shot examplesは追加
         contextToSend = [
           ...fewShotExamples,
-          ...contextToSend,
+          ...newMessages,
         ];
       }
 
@@ -342,7 +522,7 @@ export default function DashboardPage() {
   };
 
   // ローディング中またはユーザーがいない場合は何も表示しない
-  if (loading || !user) {
+  if (loading || profileLoading || !user) {
     return null;
   }
 
@@ -357,87 +537,59 @@ export default function DashboardPage() {
         borderBottom="1px solid"
         borderColor="gray.200"
       >
-        <Flex justify="space-between" align="flex-start" gap={3}>
-          {/* 左側: 今日のToDo + ログボタン + ログアウトボタン */}
-          <HStack flex={1} align="flex-start" gap={2}>
-            <IconButton
-              aria-label="ログを開く"
-              size="sm"
-              colorScheme="teal"
-              variant="ghost"
-              onClick={() => setIsLogModalOpen(true)}
-            >
-              <FiActivity />
-            </IconButton>
-            <Button
-              size="xs"
-              colorScheme="red"
-              variant="ghost"
-              onClick={handleLogout}
-            >
-              ログアウト
-            </Button>
-            <Box>
-              <Text fontSize="xs" color="gray.500">
-                今日のToDo
-              </Text>
-              <Text fontWeight="bold" fontSize="md" color="gray.800">
-                基礎問題集1-3章
-              </Text>
-            </Box>
-          </HStack>
-
-          {/* 中央: 進行中 */}
-          <Box flex={1} textAlign="center">
-            <Text fontSize="xs" color="gray.500">
-              進行中
-            </Text>
-            <Text fontWeight="semibold" fontSize="sm" color="blue.600">
-              ライティング下書き
-            </Text>
-          </Box>
-
-          {/* 右側: 次のToDo（通知エリア） */}
-          <Box
-            flex={1}
-            textAlign="right"
-            bg="orange.50"
-            px={3}
-            py={2}
-            borderRadius="md"
-            border="1px solid"
-            borderColor="orange.200"
+        <HStack justify="space-between" align="center">
+          <Text fontWeight="bold" fontSize="lg" color="gray.800">
+            TimeTurn
+          </Text>
+          <Button
+            size="xs"
+            colorScheme="red"
+            variant="ghost"
+            onClick={handleLogout}
           >
-            <Text fontSize="xs" color="orange.600" fontWeight="semibold">
-              🔔 次のToDo
-            </Text>
-            <Text fontSize="sm" fontWeight="semibold" color="gray.800">
-              英単語100個
-            </Text>
-          </Box>
-        </Flex>
+            ログアウト
+          </Button>
+        </HStack>
       </Box>
 
       {/* メインコンテンツ */}
       <VStack gap={0} pt={8}>
-        {/* タスク分解段階インジケーター */}
-        {taskBreakdownStage === "interest" && (
-          <Box
-            bg="gradient-to-r from-purple.300 to-pink.300"
-            px={4}
-            py={2}
-            borderRadius="full"
-            mb={4}
-            boxShadow="md"
-          >
-            <Text color="white" fontWeight="bold" fontSize="sm">
-              💭 目標について話し中...
-            </Text>
+        {/* ヒアリング進捗インジケーター */}
+        {taskBreakdownStage === "hearing" && (
+          <Box w="90%" maxW="340px" mb={4}>
+            <Box
+              bg="purple.500"
+              px={4}
+              py={2}
+              borderRadius="lg"
+              boxShadow="md"
+              mb={2}
+            >
+              <Text color="white" fontWeight="bold" fontSize="sm" textAlign="center">
+                💭 ヒアリング中... {hearingPercentage}%
+              </Text>
+            </Box>
+            <HStack gap={1} justify="center">
+              {HEARING_ITEMS.map((item) => (
+                <Box
+                  key={item.key}
+                  px={2}
+                  py={1}
+                  borderRadius="md"
+                  bg={hearingProgress[item.key as keyof HearingProgress] ? "green.500" : "gray.200"}
+                  color={hearingProgress[item.key as keyof HearingProgress] ? "white" : "gray.500"}
+                  fontSize="2xs"
+                  fontWeight="semibold"
+                >
+                  {hearingProgress[item.key as keyof HearingProgress] ? "✓" : ""} {item.label}
+                </Box>
+              ))}
+            </HStack>
           </Box>
         )}
         {taskBreakdownStage === "proposal" && (
           <Box
-            bg="gradient-to-r from-blue.400 to-teal.400"
+            bg="blue.500"
             px={4}
             py={2}
             borderRadius="full"
@@ -445,13 +597,13 @@ export default function DashboardPage() {
             boxShadow="md"
           >
             <Text color="white" fontWeight="bold" fontSize="sm">
-              💡 タスク分解を提案中...
+              ✅ ヒアリング完了！タスク分解の確認中
             </Text>
           </Box>
         )}
-        {taskBreakdownStage === "breakdown" && (
+        {taskBreakdownStage === "output" && (
           <Box
-            bg="gradient-to-r from-teal.400 to-green.400"
+            bg="green.500"
             px={4}
             py={2}
             borderRadius="full"
@@ -459,7 +611,7 @@ export default function DashboardPage() {
             boxShadow="md"
           >
             <Text color="white" fontWeight="bold" fontSize="sm">
-              ✨ タスク分解モード - ヒアリング中
+              ✨ タスクツリーを生成中...
             </Text>
           </Box>
         )}
@@ -520,12 +672,12 @@ export default function DashboardPage() {
           <Button
             colorScheme="purple"
             size="md"
-            onClick={() => {
+            onClick={async () => {
               const parsedNodes = parseTaskTreeFromMessage(characterMessage);
               if (parsedNodes.length > 0) {
                 const updatedTree = [...taskTree, ...parsedNodes];
                 setTaskTree(updatedTree);
-                saveTaskTree(updatedTree);
+                await saveTaskTreeAsync(updatedTree, user?.uid);
                 setCharacterMessage("タスクツリーに反映しました！タスクページで確認してください。");
                 setExpressionWithAutoReset("wawa");
               }
@@ -554,11 +706,11 @@ export default function DashboardPage() {
           <VStack gap={2}>
             <Input
               placeholder={
-                taskBreakdownStage === "breakdown"
-                  ? "詳しく答えてください..."
+                taskBreakdownStage === "output"
+                  ? "タスクについて何かあれば..."
                   : taskBreakdownStage === "proposal"
                   ? "「お願い」「やろう」など..."
-                  : taskBreakdownStage === "interest"
+                  : taskBreakdownStage === "hearing"
                   ? "気軽に答えてください..."
                   : "「〜したい」と話してみてください..."
               }
@@ -597,8 +749,21 @@ export default function DashboardPage() {
                   setTaskBreakdownStage("normal");
                   setGoalContext("");
                   setMessage("");
-                  // 会話履歴をクリア（localStorageとFirestore両方）
-                  localStorage.removeItem("chatHistory");
+                  // ヒアリング進捗もリセット
+                  setHearingProgress({
+                    why: false,
+                    current: false,
+                    target: false,
+                    timeline: false,
+                  });
+                  setHearingSummary({
+                    goal: "",
+                    why: "",
+                    current: "",
+                    target: "",
+                    timeline: "",
+                  });
+                  // 会話履歴をクリア（Firestore）
                   if (user) {
                     try {
                       await clearChatHistory(user.uid);
@@ -617,8 +782,8 @@ export default function DashboardPage() {
               </Button>
             </HStack>
 
-            {/* タスク反映ボタン（breakdown段階で会話がある時） */}
-            {taskBreakdownStage === "breakdown" && messages.length >= 6 && (
+            {/* タスク反映ボタン（output段階で会話がある時） */}
+            {taskBreakdownStage === "output" && messages.length >= 4 && (
               <Button
                 colorScheme="blue"
                 w="100%"
@@ -636,91 +801,7 @@ export default function DashboardPage() {
       </VStack>
 
       {/* ボトムナビ */}
-      <NavTabs />
-
-      {/* ログモーダル */}
-      <Dialog.Root open={isLogModalOpen} onOpenChange={(e) => setIsLogModalOpen(e.open)}>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="600px" maxH="90vh" overflowY="auto">
-            <Dialog.Header>
-              <Dialog.Title>日次ログ</Dialog.Title>
-              <Dialog.CloseTrigger />
-            </Dialog.Header>
-            <Dialog.Body>
-              <VStack align="stretch" gap={4}>
-                {/* 今日のタスク */}
-                <Card.Root>
-                  <Card.Header>
-                    <Heading size="sm">今日のタスク</Heading>
-                  </Card.Header>
-                  <Card.Body>
-                    <Stack gap={3}>
-                      {sampleTasks.map((task, idx) => (
-                        <HStack key={idx} justify="space-between">
-                          <Text>{task.title}</Text>
-                          <Button size="sm" colorScheme={task.complete ? "green" : "gray"} variant={task.complete ? "solid" : "outline"}>
-                            {task.complete ? "完了" : "完了する"}
-                          </Button>
-                        </HStack>
-                      ))}
-                      <Progress.Root value={80} borderRadius="md">
-                        <Progress.Track bg="gray.100">
-                          <Progress.Range bg="teal.400" />
-                        </Progress.Track>
-                      </Progress.Root>
-                    </Stack>
-                  </Card.Body>
-                </Card.Root>
-
-                {/* 時間ログ */}
-                <Card.Root>
-                  <Card.Header>
-                    <Heading size="sm">時間ログ</Heading>
-                  </Card.Header>
-                  <Card.Body>
-                    <Stack gap={3}>
-                      <HStack>
-                        <Text>今日の作業時間</Text>
-                        <Input placeholder="例: 120 (分)" maxW="140px" />
-                      </HStack>
-                      <HStack gap={3}>
-                        <Button colorScheme="teal">開始</Button>
-                        <Button colorScheme="red" variant="outline">
-                          停止
-                        </Button>
-                        <Button variant="ghost">保存</Button>
-                      </HStack>
-                    </Stack>
-                  </Card.Body>
-                </Card.Root>
-
-                {/* 気分スライダー */}
-                <Card.Root>
-                  <Card.Header>
-                    <Heading size="sm">気分スライダー</Heading>
-                  </Card.Header>
-                  <Card.Body>
-                    <VStack align="stretch" gap={3}>
-                      <Text>最悪</Text>
-                      <Slider.Root defaultValue={[50]} min={0} max={100} step={10}>
-                        <Slider.Track>
-                          <Slider.Range />
-                        </Slider.Track>
-                        <Slider.Thumb index={0} />
-                      </Slider.Root>
-                      <Text textAlign="right">最高</Text>
-                    </VStack>
-                    <Button mt={4} colorScheme="teal" w="full">
-                      記録する
-                    </Button>
-                  </Card.Body>
-                </Card.Root>
-              </VStack>
-            </Dialog.Body>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Dialog.Root>
+      <NavTabs onSettingsClick={() => setShowSettings(true)} />
 
       {/* 会話履歴モーダル */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
@@ -782,6 +863,20 @@ export default function DashboardPage() {
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>
+
+      {/* 初回プロフィール設定モーダル */}
+      <ProfileSetupModal
+        isOpen={showProfileSetup}
+        onComplete={handleProfileSetupComplete}
+      />
+
+      {/* 設定モーダル */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        profile={userProfile}
+        onSave={handleSettingsSave}
+      />
     </Box>
   );
 }

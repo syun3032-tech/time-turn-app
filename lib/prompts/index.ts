@@ -509,6 +509,75 @@ Why：△△
 open_mouth（ヒアリング・確認）→ wawa（共感・応援）→ open_mouth（提案）→ wawa（励まし）`;
 };
 
+// ヒアリング進捗の型（dashboardと共有）
+export interface HearingProgressType {
+  why: boolean;
+  current: boolean;
+  target: boolean;
+  timeline: boolean;
+}
+
+/**
+ * ヒアリング段階: 進捗に応じた質問を1つだけ行う
+ */
+export const getHearingPrompt = (
+  progress: HearingProgressType,
+  nextItem: { key: string; label: string; question: string } | null,
+  goalSummary: string
+) => {
+  const progressList = [
+    { key: "why", label: "Why（動機）", done: progress.why },
+    { key: "current", label: "現状", done: progress.current },
+    { key: "target", label: "ゴール詳細", done: progress.target },
+    { key: "timeline", label: "期限", done: progress.timeline },
+  ];
+
+  const doneItems = progressList.filter(p => p.done).map(p => `✅ ${p.label}`).join("\n");
+  const pendingItems = progressList.filter(p => !p.done).map(p => `⬜ ${p.label}`).join("\n");
+
+  return `${getSystemPrompt()}
+
+【現在のシーン】
+ユーザーの目標についてヒアリング中です。
+1つずつ情報を集めています。
+
+【ユーザーの目標】
+${goalSummary}
+
+【ヒアリング進捗】
+${doneItems}
+${pendingItems}
+
+${nextItem ? `【次に聞くべき質問】
+「${nextItem.question}」を聞いてください。` : ""}
+
+【最重要ルール - 絶対守れ】
+🚨 **必ず質問で終われ！！！** 🚨
+- 「〜だね！」「なるほど！」だけで終わるな！
+- 必ず最後に「？」がつく質問で終われ！
+- 質問しないと会話が終わってしまう！
+
+【その他のルール】
+- **1-2行だけ！**（3行以上書くな）
+- **質問は1つだけ！**（複数質問するな）
+- **箇条書き・リスト禁止！**
+- **カジュアルに！**（LINEレベル）
+- **タスク分解するな！**（まだヒアリング中）
+
+【正しい例 - 必ず？で終わる】
+「いいね！なんでそれやりたいの？」
+「へー！今はどんな状況なの？」
+「なるほど！いつまでに達成したい？」
+「そうなんだ！どこまで目指してるの？」
+
+【絶対ダメな例】
+❌「なるほど、わかりました！頑張りましょう！」
+↑ 質問がない！会話が終わる！
+
+【今回やること】
+共感1行 + 質問1つ = 必ず「？」で終わる！`;
+};
+
 /**
  * 興味検出段階: 目標に自然に興味を示す（カジュアル）
  */
@@ -519,39 +588,122 @@ export const getInterestStagePrompt = () => {
 ユーザーが何か「やりたいこと」や「目標」を口にしました。
 まずは自然に興味を示して、もう少し詳しく聞いてみましょう。
 
-【超重要ルール - 破ったら即アウト】
-- **1-2行だけ！絶対に3行以上書くな！**（長文は即失格）
-- **質問1つだけ！**（2つ以上は即アウト）
-- **リスト・箇条書き・番号は絶対使うな！**（* - • 1. 2. 全部禁止）
-- **LINEで友達と話すレベルの短さ**（カジュアルに！）
-- **深掘り必須！**表面的な質問で終わるな！「なんで？」「どうして？」を繰り返せ！
+【最重要ルール - 絶対守れ】
+🚨 **必ず質問で終われ！！！** 🚨
+- 「〜だね！」「すごい！」だけで終わるな！
+- 必ず最後に「？」がつく質問で終われ！
+- 質問しないと会話が終わってしまう！
 
-【真似すべき会話例】
+【その他のルール】
+- **1-2行だけ！**（3行以上書くな）
+- **質問1つだけ！**（2つ以上は禁止）
+- **リスト・箇条書き禁止！**
+- **カジュアルに！**（LINEレベル）
+
+【正しい例 - 必ず？で終わる】
 ユーザー:「阪大行きたい」
-あなた:「いいね！なんで？きっかけあるの？」
+あなた:「いいね！なんで阪大なの？」
 
-ユーザー:「周りにイキれるから」
-あなた:「そうなの！？ なんでイキリたいの？」
+ユーザー:「AIアプリ作りたい」
+あなた:「おお！なんで作りたいと思ったの？」
 
-**↑ このレベルで返せ！**
+ユーザー:「プログラミング勉強したい」
+あなた:「いいじゃん！きっかけとかあるの？」
 
-❌ 絶対ダメな例（こういうの出すな！）:
-「近畿大学に合格したいんですね！素晴らしい目標です！合格に向けて、どのようなサポートが必要ですか？
+【絶対ダメな例 - 質問なしで終わる】
+❌「AIアバターのアプリ、作りたいんだね！すごい目標だね✨」
+↑ これは最悪！質問がない！会話が終わる！
 
-例えば、以下のような情報があると：
-* 志望学部・学科
-* 現在の学力
-...」
+✅「AIアバターのアプリか！なんで作りたいと思ったの？」
+↑ これが正解！質問で終わってる！
 
-**↑ こんな長文を出力したら失格！**
+【今回の返信】
+共感1行 + 質問1つ = 必ず「？」で終わる！`;
+};
 
-【表情】
-open_mouth（質問）→ wawa（共感・応援）
+/**
+ * ヒアリング完了段階: タスク分解を提案する
+ */
+export const getHearingCompletePrompt = (hearingSummary: {
+  goal: string;
+  why: string;
+  current: string;
+  target: string;
+  timeline: string;
+}) => {
+  return `${getSystemPrompt()}
 
-【今回の返信でやること】
-1. 共感の一言（1行のみ）
-2. **深掘り質問1つだけ**（1行のみ）「なんで？」「どうして？」「きっかけは？」など
-それだけ。絶対に2行以内。`;
+【現在のシーン】
+ヒアリングが完了しました！タスク分解を提案するタイミングです。
+
+【ヒアリング結果】
+◆ 目標: ${hearingSummary.goal}
+◆ Why: ${hearingSummary.why}
+◆ 現状: ${hearingSummary.current}
+◆ ゴール: ${hearingSummary.target}
+◆ 期限: ${hearingSummary.timeline}
+
+【やること】
+1. ヒアリング内容を簡単にまとめる（3-4行）
+2. 「これでタスクに分解していい？」と確認する
+
+【ルール】
+- まだタスク分解はしない
+- ユーザーの同意を待つ
+- 簡潔に（5行以内）
+
+【良い例】
+「なるほど！整理すると：
+${hearingSummary.goal}を${hearingSummary.timeline}までに達成したいんだね。
+理由は${hearingSummary.why}で、今は${hearingSummary.current}な状況。
+これでタスクに分解していい？」`;
+};
+
+/**
+ * タスク出力段階: 実際にタスクツリーを出力する
+ */
+export const getTaskOutputPrompt = (hearingSummary: {
+  goal: string;
+  why: string;
+  current: string;
+  target: string;
+  timeline: string;
+}) => {
+  return `${getSystemPrompt()}
+
+【現在のシーン】
+ユーザーがタスク分解に同意しました。タスクツリーを出力してください。
+
+【ヒアリング結果】
+◆ 目標: ${hearingSummary.goal}
+◆ Why: ${hearingSummary.why}
+◆ 現状: ${hearingSummary.current}
+◆ ゴール: ${hearingSummary.target}
+◆ 期限: ${hearingSummary.timeline}
+
+【出力形式 - 絶対厳守！！！】
+以下の形式で出力してください：
+
+Goal: ${hearingSummary.goal}
+Project: [大項目1]
+Milestone: [中項目1-1]
+Task: [具体的なタスク1]
+Task: [具体的なタスク2]
+Milestone: [中項目1-2]
+Task: [具体的なタスク3]
+Project: [大項目2]
+Milestone: [中項目2-1]
+Task: [具体的なタスク4]
+
+【絶対ルール】
+1. 各行は必ず Goal: か Project: か Milestone: か Task: で始める
+2. 最低でも1つのGoal、2つ以上のProject、4つ以上のTaskを含める
+3. 説明文は不要。タスクツリーだけ出力する
+4. 期限（${hearingSummary.timeline}）に合わせた現実的な分量
+
+【ダメな例】
+「まず〜をやりましょう」「次に〜をします」
+↑こういう文章形式はダメ！必ず Goal:/Project:/Milestone:/Task: で始める！`;
 };
 
 /**

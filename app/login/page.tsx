@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Button, Input, VStack, Heading, Text, HStack } from '@chakra-ui/react';
 import { signIn, signUp, signInWithGoogle } from '@/lib/firebase/auth';
 import { useAuth } from '@/contexts/AuthContext';
-import { useEffect } from 'react';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,7 +81,7 @@ export default function LoginPage() {
         boxShadow="lg"
       >
         <VStack gap={6}>
-          <Heading size="xl">TimeTurn</Heading>
+          <Heading size="xl" color="black">TimeTurn</Heading>
           <Text color="gray.600">
             {isSignUp ? 'アカウントを作成' : 'ログイン'}
           </Text>
@@ -92,14 +93,31 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               size="lg"
+              color="black"
             />
-            <Input
-              type="password"
-              placeholder="パスワード"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              size="lg"
-            />
+            <Box position="relative" w="full">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="パスワード"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                size="lg"
+                pr="3rem"
+                color="black"
+              />
+              <Box
+                position="absolute"
+                right="0.75rem"
+                top="50%"
+                transform="translateY(-50%)"
+                cursor="pointer"
+                color="black"
+                onClick={() => setShowPassword(!showPassword)}
+                zIndex={2}
+              >
+                {showPassword ? <FiEyeOff size={20} /> : <FiEye size={20} />}
+              </Box>
+            </Box>
 
             {error && (
               <Text color="red.500" fontSize="sm">

@@ -6,6 +6,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   query,
   where,
   orderBy,
@@ -260,4 +261,71 @@ export async function getCompletedTasks(userId: string, limitCount: number = 50)
 
   // completedAtでソート（新しい順）
   return tasks.sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())
+}
+
+/**
+ * User Profile
+ */
+export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+  const docRef = doc(db, 'userProfiles', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) {
+    return null
+  }
+
+  return {
+    ...docSnap.data(),
+    createdAt: toDate(docSnap.data().createdAt),
+    updatedAt: toDate(docSnap.data().updatedAt)
+  } as UserProfile
+}
+
+export async function createUserProfile(
+  userId: string,
+  email: string,
+  data: Partial<Omit<UserProfile, 'uid' | 'email' | 'createdAt' | 'updatedAt'>>
+) {
+  const docRef = doc(db, 'userProfiles', userId)
+  await setDoc(docRef, {
+    uid: userId,
+    email,
+    ...data,
+    profileCompleted: data.profileCompleted ?? false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  })
+}
+
+export async function updateUserProfile(
+  userId: string,
+  data: Partial<Omit<UserProfile, 'uid' | 'email' | 'createdAt' | 'updatedAt'>>
+) {
+  const docRef = doc(db, 'userProfiles', userId)
+  await updateDoc(docRef, {
+    ...data,
+    updatedAt: serverTimestamp()
+  })
+}
+
+/**
+ * Task Tree (タスクツリー全体をユーザーごとに保存)
+ */
+export async function getTaskTreeFromFirestore(userId: string): Promise<any[] | null> {
+  const docRef = doc(db, 'taskTrees', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) {
+    return null
+  }
+
+  return docSnap.data().tree || []
+}
+
+export async function saveTaskTreeToFirestore(userId: string, tree: any[]): Promise<void> {
+  const docRef = doc(db, 'taskTrees', userId)
+  await setDoc(docRef, {
+    tree,
+    updatedAt: serverTimestamp()
+  }, { merge: true })
 }
