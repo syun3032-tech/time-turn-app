@@ -1,10 +1,10 @@
 "use client";
 
-import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Dialog, Progress, Switch, Input } from "@chakra-ui/react";
+import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { FiChevronRight, FiChevronDown, FiCalendar } from "react-icons/fi";
+import { FiCalendar } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTreeAsync, saveTaskTreeAsync } from "@/lib/task-tree-storage";
@@ -405,16 +405,6 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               )}
             </VStack>
 
-            {canHaveChildren && (
-              <IconButton
-                aria-label={isExpanded ? "閉じる" : "展開"}
-                size="sm"
-                variant="ghost"
-                colorScheme="teal"
-              >
-                {isExpanded ? <FiChevronDown /> : <FiChevronRight />}
-              </IconButton>
-            )}
           </HStack>
         </Card.Body>
       </Card.Root>
