@@ -164,6 +164,10 @@ interface TreeNodeProps {
 
 function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, highlightedId, showArchived }: TreeNodeProps) {
   const isTask = node.title?.startsWith("Task:");
+  const isGoal = node.title?.startsWith("Goal:");
+  const isProject = node.title?.startsWith("Project:");
+  const isMilestone = node.title?.startsWith("Milestone:");
+  const canHaveChildren = isGoal || isProject || isMilestone; // Task以外は子を持てる
   const hasChildren = node.children && node.children.length > 0;
   const isArchived = node.archived === true;
   const isExpanded = expandedNodes.has(node.id);
@@ -174,7 +178,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
 
   // Tempo風: 子要素があるかどうかで表示を切り替え
   const showProgressBar = hasChildren; // 子があれば進捗バー
-  const showCheckbox = !hasChildren && !isArchived; // 子がなければチェックボックス
+  const showCheckbox = isTask && !isArchived; // Taskのみチェックボックス表示
   const progress = hasChildren ? calculateProgress(node) : 0;
 
   // Check if any child is expanded
@@ -190,7 +194,8 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   }, [isHighlighted]);
 
   const handleClick = () => {
-    if (hasChildren && !isTask) {
+    // 子を持てるノード（Goal, Project, Milestone）はクリックで展開/折りたたみ
+    if (canHaveChildren) {
       onToggle(node.id);
       if (!isExpanded) {
         // Scroll to this node after expansion
@@ -223,7 +228,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
         _hover={{
           shadow: "md",
           borderColor: isHighlighted ? "yellow.500" : "teal.300",
-          cursor: hasChildren && !isTask ? "pointer" : "default",
+          cursor: canHaveChildren ? "pointer" : "default",
         }}
         onClick={handleClick}
       >
@@ -400,7 +405,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               )}
             </VStack>
 
-            {hasChildren && !isTask && (
+            {canHaveChildren && (
               <IconButton
                 aria-label={isExpanded ? "閉じる" : "展開"}
                 size="sm"
@@ -435,7 +440,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
           ))}
 
           {/* Add button - only show if no child is expanded */}
-          {!isTask && !hasExpandedChild && (
+          {canHaveChildren && !hasExpandedChild && (
             <Button
               size="sm"
               variant="outline"
