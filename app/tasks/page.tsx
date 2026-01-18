@@ -780,18 +780,16 @@ function TasksPageContent() {
           />
         ))}
 
-        {/* Add Goal button - only show when nothing is expanded */}
-        {expandedNodes.size === 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            colorScheme="teal"
-            w="full"
-            onClick={handleAddGoal}
-          >
-            + Goalを追加
-          </Button>
-        )}
+        {/* Add Goal button - always show at bottom */}
+        <Button
+          size="sm"
+          variant="outline"
+          colorScheme="teal"
+          w="full"
+          onClick={handleAddGoal}
+        >
+          + Goalを追加
+        </Button>
       </VStack>
 
       <NavTabs />
