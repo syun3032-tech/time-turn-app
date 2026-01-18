@@ -511,12 +511,39 @@ export default function DashboardPage() {
         const expression = getExpressionForMessage(response.content);
         setExpressionWithAutoReset(expression);
       } else {
-        setCharacterMessage(`エラーが発生しました: ${response.error || "Unknown error"}`);
+        // レート制限やクォータエラーの検出
+        const errorMsg = response.error?.toLowerCase() || "";
+        const isRateLimitError =
+          errorMsg.includes("429") ||
+          errorMsg.includes("rate") ||
+          errorMsg.includes("quota") ||
+          errorMsg.includes("limit") ||
+          errorMsg.includes("exceeded") ||
+          errorMsg.includes("resource");
+
+        if (isRateLimitError) {
+          setCharacterMessage("現在βテスト版のため、APIの利用上限に達しました。しばらく時間を空けてから操作してください。");
+        } else {
+          setCharacterMessage(`エラーが発生しました: ${response.error || "Unknown error"}`);
+        }
         setCharacterExpression("normal");
       }
     } catch (error) {
       console.error("Failed to send message:", error);
-      setCharacterMessage("ごめんね、エラーが起きちゃった...");
+      const errorStr = error instanceof Error ? error.message.toLowerCase() : "";
+      const isRateLimitError =
+        errorStr.includes("429") ||
+        errorStr.includes("rate") ||
+        errorStr.includes("quota") ||
+        errorStr.includes("limit") ||
+        errorStr.includes("exceeded") ||
+        errorStr.includes("resource");
+
+      if (isRateLimitError) {
+        setCharacterMessage("現在βテスト版のため、APIの利用上限に達しました。しばらく時間を空けてから操作してください。");
+      } else {
+        setCharacterMessage("ごめんね、エラーが起きちゃった...");
+      }
       setCharacterExpression("normal");
     } finally {
       setIsLoading(false);
