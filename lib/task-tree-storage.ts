@@ -11,6 +11,44 @@ const STORAGE_KEY = "task_tree_data";
 const initialTree: TaskNode[] = [];
 
 /**
+ * ユニークなIDを生成
+ */
+function generateUniqueId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/**
+ * ツリー内の重複IDを修正
+ */
+function fixDuplicateIds(tree: TaskNode[]): { tree: TaskNode[]; fixed: boolean } {
+  const seenIds = new Set<string>();
+  let fixed = false;
+
+  const fixNode = (node: any): any => {
+    // IDが重複している場合、新しいIDを生成
+    if (seenIds.has(node.id)) {
+      const prefix = node.title?.startsWith("Goal:") ? "goal" :
+                     node.title?.startsWith("Project:") ? "project" :
+                     node.title?.startsWith("Milestone:") ? "milestone" :
+                     node.title?.startsWith("Task:") ? "task" : "node";
+      node.id = generateUniqueId(prefix);
+      fixed = true;
+    }
+    seenIds.add(node.id);
+
+    // 子ノードも再帰的に処理
+    if (node.children && Array.isArray(node.children)) {
+      node.children = node.children.map(fixNode);
+    }
+
+    return node;
+  };
+
+  const fixedTree = tree.map(fixNode);
+  return { tree: fixedTree, fixed };
+}
+
+/**
  * タスクツリーを取得（非同期・Firestore優先）
  */
 export async function getTaskTreeAsync(userId?: string): Promise<TaskNode[]> {
@@ -19,7 +57,13 @@ export async function getTaskTreeAsync(userId?: string): Promise<TaskNode[]> {
     try {
       const tree = await getTaskTreeFromFirestore(userId);
       if (tree && tree.length > 0) {
-        return tree as TaskNode[];
+        // 重複IDをチェック・修正
+        const { tree: fixedTree, fixed } = fixDuplicateIds(tree as TaskNode[]);
+        if (fixed) {
+          console.log("重複IDを検出・修正しました。データを保存します。");
+          await saveTaskTreeToFirestore(userId, fixedTree);
+        }
+        return fixedTree;
       }
       // Firestoreにデータがない場合、localStorageからの移行を試みる
       const localTree = getTaskTreeFromLocal();
