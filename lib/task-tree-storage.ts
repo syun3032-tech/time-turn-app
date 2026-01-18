@@ -89,12 +89,34 @@ export async function getTaskTreeAsync(userId?: string): Promise<TaskNode[]> {
 }
 
 /**
+ * オブジェクトからundefined値を再帰的に除去
+ */
+function removeUndefinedValues(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefinedValues);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefinedValues(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+/**
  * タスクツリーを保存（非同期・Firestore優先）
  */
 export async function saveTaskTreeAsync(tree: TaskNode[], userId?: string): Promise<void> {
+  // Firestore保存前にundefined値を除去
+  const cleanedTree = removeUndefinedValues(tree);
+
   if (userId) {
     try {
-      await saveTaskTreeToFirestore(userId, tree);
+      await saveTaskTreeToFirestore(userId, cleanedTree);
       return;
     } catch (error) {
       console.error("Failed to save task tree to Firestore:", error);
@@ -103,7 +125,7 @@ export async function saveTaskTreeAsync(tree: TaskNode[], userId?: string): Prom
   }
 
   // localStorageに保存
-  saveTaskTreeToLocal(tree);
+  saveTaskTreeToLocal(cleanedTree);
 }
 
 /**

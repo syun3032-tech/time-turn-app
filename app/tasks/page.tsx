@@ -680,14 +680,17 @@ function TasksPageContent() {
       };
 
       // Firestoreに保存（振り返りメモ付き）
-      await saveCompletedTask(user.uid, {
+      const completedTaskData: any = {
         taskId: completingNode.id,
         taskTitle: completingNode.title,
         taskType: getTaskType(completingNode.title),
         completedAt: new Date(),
         aiCapable: completingNode.ai || false,
-        reflectionNote: withNote ? reflectionNote.trim() : undefined
-      });
+      };
+      if (withNote && reflectionNote.trim()) {
+        completedTaskData.reflectionNote = reflectionNote.trim();
+      }
+      await saveCompletedTask(user.uid, completedTaskData);
 
       // ツリーからアーカイブに移動
       const archiveNode = (nodes: any[]): any[] => {
