@@ -544,11 +544,11 @@ export default function DashboardPage() {
           </Text>
           <Button
             size="xs"
-            colorScheme="red"
+            colorScheme="gray"
             variant="ghost"
-            onClick={handleLogout}
+            onClick={() => setShowSettings(true)}
           >
-            ログアウト
+            設定
           </Button>
         </HStack>
       </Box>
@@ -802,7 +802,7 @@ export default function DashboardPage() {
       </VStack>
 
       {/* ボトムナビ */}
-      <NavTabs onSettingsClick={() => setShowSettings(true)} />
+      <NavTabs />
 
       {/* 会話履歴モーダル */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
@@ -877,6 +877,7 @@ export default function DashboardPage() {
         onClose={() => setShowSettings(false)}
         profile={userProfile}
         onSave={handleSettingsSave}
+        onLogout={handleLogout}
       />
     </Box>
   );

@@ -18,9 +18,10 @@ interface SettingsModalProps {
   onClose: () => void;
   profile: UserProfile | null;
   onSave: (data: { nickname: string; occupation: string; hobbies: string }) => Promise<void>;
+  onLogout: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose, profile, onSave }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, profile, onSave, onLogout }: SettingsModalProps) {
   const [nickname, setNickname] = useState("");
   const [occupation, setOccupation] = useState("");
   const [hobbies, setHobbies] = useState("");
@@ -158,6 +159,18 @@ export function SettingsModal({ isOpen, onClose, profile, onSave }: SettingsModa
               保存
             </Button>
           </HStack>
+
+          <Box borderTop="1px solid" borderColor="gray.200" pt={4} mt={2}>
+            <Button
+              colorScheme="red"
+              variant="outline"
+              size="md"
+              w="full"
+              onClick={onLogout}
+            >
+              ログアウト
+            </Button>
+          </Box>
         </VStack>
       </Box>
     </Box>
