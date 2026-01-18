@@ -10,7 +10,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTreeAsync, saveTaskTreeAsync } from "@/lib/task-tree-storage";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { saveCompletedTask } from "@/lib/firebase/firestore";
+import { saveCompletedTask, deleteCompletedTaskByTaskId } from "@/lib/firebase/firestore";
 import { TaskNode } from "@/types/task-tree";
 
 const initialTreeBackup = [
@@ -781,21 +781,32 @@ function TasksPageContent() {
     setTree(updateTree(tree));
   };
 
-  const handleRestoreTask = (nodeId: string) => {
-    const restoreNode = (nodes: any[]): any[] => {
-      return nodes.map((n) => {
-        if (n.id === nodeId) {
-          // archivedフラグを削除して未完了に戻す
-          const { archived, completedAt, ...rest } = n;
-          return rest;
-        }
-        if (n.children) {
-          return { ...n, children: restoreNode(n.children) };
-        }
-        return n;
-      });
-    };
-    setTree(restoreNode(tree));
+  const handleRestoreTask = async (nodeId: string) => {
+    if (!user) return;
+
+    try {
+      // Firestoreから完了タスクを削除
+      await deleteCompletedTaskByTaskId(user.uid, nodeId);
+
+      // ツリーからarchivedフラグを削除
+      const restoreNode = (nodes: any[]): any[] => {
+        return nodes.map((n) => {
+          if (n.id === nodeId) {
+            // archivedフラグを削除して未完了に戻す
+            const { archived, completedAt, ...rest } = n;
+            return rest;
+          }
+          if (n.children) {
+            return { ...n, children: restoreNode(n.children) };
+          }
+          return n;
+        });
+      };
+      setTree(restoreNode(tree));
+    } catch (error) {
+      console.error("Failed to restore task:", error);
+      alert("タスクの復元に失敗しました");
+    }
   };
 
   // ローディング中またはユーザーがいない場合は何も表示しない

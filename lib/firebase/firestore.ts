@@ -263,6 +263,17 @@ export async function getCompletedTasks(userId: string, limitCount: number = 50)
   return tasks.sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())
 }
 
+export async function deleteCompletedTaskByTaskId(userId: string, taskId: string): Promise<void> {
+  const q = query(
+    collection(db, 'completedTasks'),
+    where('userId', '==', userId),
+    where('taskId', '==', taskId)
+  )
+  const snapshot = await getDocs(q)
+  const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref))
+  await Promise.all(deletePromises)
+}
+
 /**
  * User Profile
  */
