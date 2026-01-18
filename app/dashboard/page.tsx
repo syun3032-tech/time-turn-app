@@ -503,17 +503,38 @@ export default function DashboardPage() {
         { role: "assistant", content: "そうなの！？ なんでイキリたいの？" },
       ];
 
-      // システムプロンプトがある場合は先頭に追加
-      if (systemPrompt) {
+      // === プラン3: トークン節約 ===
+      // 会話履歴を直近10件（5往復）に制限
+      const MAX_HISTORY_MESSAGES = 10;
+      const recentMessages = newMessages.slice(-MAX_HISTORY_MESSAGES);
+
+      // ヒアリング情報をシステムプロンプトに埋め込む
+      const hearingContext = (hearingSummary.goal || hearingSummary.why || hearingSummary.current || hearingSummary.target || hearingSummary.timeline)
+        ? `\n【収集済みヒアリング情報】
+◆ 目標: ${hearingSummary.goal || "未収集"}
+◆ Why（動機）: ${hearingSummary.why || "未収集"}
+◆ 現状: ${hearingSummary.current || "未収集"}
+◆ ゴール: ${hearingSummary.target || "未収集"}
+◆ 期限: ${hearingSummary.timeline || "未収集"}
+※上記は過去の会話で収集済み。同じ質問を繰り返さないこと。`
+        : "";
+
+      // システムプロンプト + ヒアリング情報を結合
+      const fullSystemPrompt = systemPrompt
+        ? systemPrompt + hearingContext
+        : hearingContext;
+
+      // コンテキストを構築
+      if (fullSystemPrompt) {
         contextToSend = [
-          { role: "user", content: systemPrompt },
+          { role: "user", content: fullSystemPrompt },
           ...fewShotExamples,
-          ...newMessages,
+          ...recentMessages,
         ];
       } else {
         contextToSend = [
           ...fewShotExamples,
-          ...newMessages,
+          ...recentMessages,
         ];
       }
 
