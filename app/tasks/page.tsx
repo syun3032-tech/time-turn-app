@@ -158,11 +158,12 @@ interface TreeNodeProps {
   onCompleteTask: (node: any) => void;
   onDelete: (nodeId: string) => void;
   onUpdateMemo: (nodeId: string, memo: string) => void;
+  onRestoreTask: (nodeId: string) => void;
   highlightedId?: string | null;
   showArchived: boolean;
 }
 
-function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, highlightedId, showArchived }: TreeNodeProps) {
+function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, onRestoreTask, highlightedId, showArchived }: TreeNodeProps) {
   const isTask = node.title?.startsWith("Task:");
   const isGoal = node.title?.startsWith("Goal:");
   const isProject = node.title?.startsWith("Project:");
@@ -245,19 +246,34 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 >
                   {node.title}
                 </Text>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  colorScheme="gray"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm(`「${node.title}」を削除しますか？`)) {
-                      onDelete(node.id);
-                    }
-                  }}
-                >
-                  削除
-                </Button>
+                <HStack gap={1}>
+                  {isArchived && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      colorScheme="blue"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRestoreTask(node.id);
+                      }}
+                    >
+                      未完了に戻す
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="gray"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`「${node.title}」を削除しますか？`)) {
+                        onDelete(node.id);
+                      }
+                    }}
+                  >
+                    削除
+                  </Button>
+                </HStack>
               </HStack>
 
               {/* 進捗バー（子要素がある場合） */}
@@ -424,6 +440,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               onCompleteTask={onCompleteTask}
               onDelete={onDelete}
               onUpdateMemo={onUpdateMemo}
+              onRestoreTask={onRestoreTask}
               highlightedId={highlightedId}
               showArchived={showArchived}
             />
@@ -764,6 +781,23 @@ function TasksPageContent() {
     setTree(updateTree(tree));
   };
 
+  const handleRestoreTask = (nodeId: string) => {
+    const restoreNode = (nodes: any[]): any[] => {
+      return nodes.map((n) => {
+        if (n.id === nodeId) {
+          // archivedフラグを削除して未完了に戻す
+          const { archived, completedAt, ...rest } = n;
+          return rest;
+        }
+        if (n.children) {
+          return { ...n, children: restoreNode(n.children) };
+        }
+        return n;
+      });
+    };
+    setTree(restoreNode(tree));
+  };
+
   // ローディング中またはユーザーがいない場合は何も表示しない
   if (loading || !user) {
     return null;
@@ -804,6 +838,7 @@ function TasksPageContent() {
             onCompleteTask={handleCompleteTask}
             onDelete={handleDelete}
             onUpdateMemo={handleUpdateMemo}
+            onRestoreTask={handleRestoreTask}
             highlightedId={highlightId}
             showArchived={showArchived}
           />
