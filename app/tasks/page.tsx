@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Dialog, Progress, Switch } from "@chakra-ui/react";
+import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, IconButton, Dialog, Progress, Switch, Input } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { useState, useRef, useEffect, Suspense } from "react";
@@ -156,17 +156,21 @@ interface TreeNodeProps {
   onAddChild: (parentId: string, type: string) => void;
   onOpenPeriodModal: (node: any) => void;
   onCompleteTask: (node: any) => void;
+  onDelete: (nodeId: string) => void;
+  onUpdateMemo: (nodeId: string, memo: string) => void;
   highlightedId?: string | null;
   showArchived: boolean;
 }
 
-function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, highlightedId, showArchived }: TreeNodeProps) {
+function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, highlightedId, showArchived }: TreeNodeProps) {
   const isTask = node.title?.startsWith("Task:");
   const hasChildren = node.children && node.children.length > 0;
   const isArchived = node.archived === true;
   const isExpanded = expandedNodes.has(node.id);
   const isHighlighted = highlightedId === node.id;
   const nodeRef = useRef<HTMLDivElement>(null);
+  const [isMemoOpen, setIsMemoOpen] = useState(false);
+  const [memoText, setMemoText] = useState(node.memo || "");
 
   // Tempo風: 子要素があるかどうかで表示を切り替え
   const showProgressBar = hasChildren; // 子があれば進捗バー
@@ -224,16 +228,32 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
         onClick={handleClick}
       >
         <Card.Body p={{ base: 3, md: 4 }}>
-          <HStack justify="space-between" align="center">
+          <HStack justify="space-between" align="flex-start">
             <VStack align="stretch" gap={2} flex={1}>
-              <Text
-                fontSize={{ base: "sm", md: "md" }}
-                fontWeight="semibold"
-                lineClamp={2}
-                color="gray.900"
-              >
-                {node.title}
-              </Text>
+              <HStack justify="space-between" align="flex-start">
+                <Text
+                  fontSize={{ base: "sm", md: "md" }}
+                  fontWeight="semibold"
+                  lineClamp={2}
+                  color="gray.900"
+                  flex={1}
+                >
+                  {node.title}
+                </Text>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  colorScheme="gray"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`「${node.title}」を削除しますか？`)) {
+                      onDelete(node.id);
+                    }
+                  }}
+                >
+                  削除
+                </Button>
+              </HStack>
 
               {/* 進捗バー（子要素がある場合） */}
               {showProgressBar && (
@@ -300,21 +320,70 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 </HStack>
               )}
 
-              {/* Set period button */}
-              <Button
-                size="xs"
-                variant="ghost"
-                colorScheme="teal"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenPeriodModal(node);
-                }}
-              >
-                <HStack gap={1}>
-                  <FiCalendar />
-                  <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
+              {/* メモエリア（横展開） */}
+              <HStack w="full" gap={2} align="flex-start" flexWrap="wrap">
+                {/* メモボタンと入力欄 */}
+                <HStack flex={1} gap={2} align="center" minW="200px">
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="gray"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsMemoOpen(!isMemoOpen);
+                    }}
+                  >
+                    <Text>メモ {isMemoOpen ? "▲" : "▼"}</Text>
+                  </Button>
+
+                  {/* メモ入力欄（横展開） */}
+                  {isMemoOpen && (
+                    <HStack flex={1} gap={1}>
+                      <Input
+                        placeholder="メモを入力..."
+                        value={memoText}
+                        onChange={(e) => setMemoText(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        size="xs"
+                      />
+                      <Button
+                        size="xs"
+                        colorScheme="teal"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateMemo(node.id, memoText);
+                          setIsMemoOpen(false);
+                        }}
+                      >
+                        保存
+                      </Button>
+                    </HStack>
+                  )}
+
+                  {/* メモ表示（閉じている時） */}
+                  {!isMemoOpen && node.memo && (
+                    <Text fontSize="xs" color="gray.500" flex={1}>
+                      {node.memo}
+                    </Text>
+                  )}
                 </HStack>
-              </Button>
+
+                {/* 期限ボタン（右寄せ） */}
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  colorScheme="teal"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenPeriodModal(node);
+                  }}
+                >
+                  <HStack gap={1}>
+                    <FiCalendar />
+                    <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
+                  </HStack>
+                </Button>
+              </HStack>
 
               {isTask && node.ai && !isArchived && (
                 <Link href="/tasks/sample-task-id/run">
@@ -358,6 +427,8 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               onAddChild={onAddChild}
               onOpenPeriodModal={onOpenPeriodModal}
               onCompleteTask={onCompleteTask}
+              onDelete={onDelete}
+              onUpdateMemo={onUpdateMemo}
               highlightedId={highlightedId}
               showArchived={showArchived}
             />
@@ -400,6 +471,11 @@ function TasksPageContent() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [nodeCounter, setNodeCounter] = useState(20); // Start from 20 since we have 19 tasks
   const [showArchived, setShowArchived] = useState(false);
+
+  // Goal追加モーダル用state
+  const [isAddGoalModalOpen, setIsAddGoalModalOpen] = useState(false);
+  const [newGoalTitle, setNewGoalTitle] = useState("");
+  const [newGoalEndDate, setNewGoalEndDate] = useState<Date | null>(null);
 
 
   // 認証チェック
@@ -518,17 +594,32 @@ function TasksPageContent() {
   };
 
   const handleAddGoal = () => {
-    const title = prompt("新しいGoalの名前を入力してください:");
-    if (!title) return;
+    setNewGoalTitle("");
+    setNewGoalEndDate(null);
+    setIsAddGoalModalOpen(true);
+  };
+
+  const handleSaveNewGoal = () => {
+    if (!newGoalTitle) return;
+
+    const formatDate = (date: Date | null) => {
+      if (!date) return "";
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
 
     const newGoal = {
       id: `goal-${nodeCounter}`,
-      title: `Goal: ${title}`,
+      title: `Goal: ${newGoalTitle}`,
       children: [],
+      endDate: formatDate(newGoalEndDate),
     };
 
     setNodeCounter(nodeCounter + 1);
     setTree([...tree, newGoal]);
+    setIsAddGoalModalOpen(false);
   };
 
   const handleOpenPeriodModal = (node: any) => {
@@ -621,6 +712,34 @@ function TasksPageContent() {
     }
   };
 
+  const handleDelete = (nodeId: string) => {
+    const deleteFromTree = (nodes: any[]): any[] => {
+      return nodes.filter((n) => {
+        if (n.id === nodeId) return false;
+        if (n.children) {
+          n.children = deleteFromTree(n.children);
+        }
+        return true;
+      });
+    };
+    setTree(deleteFromTree(tree));
+  };
+
+  const handleUpdateMemo = (nodeId: string, memo: string) => {
+    const updateTree = (nodes: any[]): any[] => {
+      return nodes.map((n) => {
+        if (n.id === nodeId) {
+          return { ...n, memo };
+        }
+        if (n.children) {
+          return { ...n, children: updateTree(n.children) };
+        }
+        return n;
+      });
+    };
+    setTree(updateTree(tree));
+  };
+
   // ローディング中またはユーザーがいない場合は何も表示しない
   if (loading || !user) {
     return null;
@@ -659,6 +778,8 @@ function TasksPageContent() {
             onAddChild={handleAddChild}
             onOpenPeriodModal={handleOpenPeriodModal}
             onCompleteTask={handleCompleteTask}
+            onDelete={handleDelete}
+            onUpdateMemo={handleUpdateMemo}
             highlightedId={highlightId}
             showArchived={showArchived}
           />
@@ -710,6 +831,51 @@ function TasksPageContent() {
                 </Button>
                 <Button colorScheme="teal" onClick={handleSavePeriod}>
                   保存
+                </Button>
+              </HStack>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
+      {/* Goal追加モーダル */}
+      <Dialog.Root open={isAddGoalModalOpen} onOpenChange={(e) => setIsAddGoalModalOpen(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content maxW="400px">
+            <Dialog.Header>
+              <Dialog.Title>新しいGoalを追加</Dialog.Title>
+              <Dialog.CloseTrigger />
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="stretch" gap={4}>
+                <Box>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2}>Goal名</Text>
+                  <Input
+                    placeholder="Goal名を入力..."
+                    value={newGoalTitle}
+                    onChange={(e) => setNewGoalTitle(e.target.value)}
+                  />
+                </Box>
+                <Box>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2}>終了日（任意）</Text>
+                  <DatePicker
+                    selected={newGoalEndDate}
+                    onChange={(date) => setNewGoalEndDate(date)}
+                    dateFormat="yyyy/MM/dd"
+                    inline
+                    locale="ja"
+                  />
+                </Box>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <HStack w="full" justify="flex-end" gap={2}>
+                <Button variant="outline" onClick={() => setIsAddGoalModalOpen(false)}>
+                  キャンセル
+                </Button>
+                <Button colorScheme="teal" onClick={handleSaveNewGoal} disabled={!newGoalTitle}>
+                  追加
                 </Button>
               </HStack>
             </Dialog.Footer>
