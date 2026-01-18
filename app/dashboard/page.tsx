@@ -314,13 +314,14 @@ export default function DashboardPage() {
   };
 
   // 設定保存
-  const handleSettingsSave = async (data: { nickname: string; occupation: string }) => {
+  const handleSettingsSave = async (data: { nickname: string; occupation: string; hobbies: string }) => {
     if (!user) return;
 
     try {
       await updateUserProfile(user.uid, {
         nickname: data.nickname,
         occupation: data.occupation,
+        hobbies: data.hobbies,
       });
 
       // ローカル状態を更新

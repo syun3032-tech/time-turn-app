@@ -17,18 +17,20 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: UserProfile | null;
-  onSave: (data: { nickname: string; occupation: string }) => Promise<void>;
+  onSave: (data: { nickname: string; occupation: string; hobbies: string }) => Promise<void>;
 }
 
 export function SettingsModal({ isOpen, onClose, profile, onSave }: SettingsModalProps) {
   const [nickname, setNickname] = useState("");
   const [occupation, setOccupation] = useState("");
+  const [hobbies, setHobbies] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setNickname(profile.nickname || "");
       setOccupation(profile.occupation || "");
+      setHobbies(profile.hobbies || "");
     }
   }, [profile]);
 
@@ -38,7 +40,7 @@ export function SettingsModal({ isOpen, onClose, profile, onSave }: SettingsModa
     if (!nickname.trim()) return;
     setLoading(true);
     try {
-      await onSave({ nickname: nickname.trim(), occupation: occupation.trim() });
+      await onSave({ nickname: nickname.trim(), occupation: occupation.trim(), hobbies: hobbies.trim() });
       onClose();
     } finally {
       setLoading(false);
@@ -104,6 +106,19 @@ export function SettingsModal({ isOpen, onClose, profile, onSave }: SettingsModa
                 placeholder="例: 学生、エンジニア、主婦"
                 value={occupation}
                 onChange={(e) => setOccupation(e.target.value)}
+                size="lg"
+                color="black"
+              />
+            </Box>
+
+            <Box>
+              <Text fontSize="sm" fontWeight="semibold" color="black" mb={1}>
+                趣味・好きなこと（任意）
+              </Text>
+              <Input
+                placeholder="例: 読書、ゲーム、料理"
+                value={hobbies}
+                onChange={(e) => setHobbies(e.target.value)}
                 size="lg"
                 color="black"
               />

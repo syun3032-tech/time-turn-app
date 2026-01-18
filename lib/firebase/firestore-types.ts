@@ -9,6 +9,7 @@ export interface UserProfile {
   nickname?: string
   birthDate?: string
   occupation?: string
+  hobbies?: string
   personalityType?: string
   preferences?: Record<string, any>
   analysisResult?: Record<string, any>
