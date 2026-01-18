@@ -900,10 +900,10 @@ function TasksPageContent() {
         }
       }}>
         <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="400px">
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="400px" mx={4}>
             <Dialog.Header>
-              <Dialog.Title color="gray.800">タスク完了！</Dialog.Title>
+              <Dialog.Title color="black" fontWeight="bold">タスク完了！</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
