@@ -814,10 +814,10 @@ function TasksPageContent() {
       {/* Period Modal */}
       <Dialog.Root open={isPeriodModalOpen} onOpenChange={(e) => setIsPeriodModalOpen(e.open)}>
         <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="400px">
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="400px" mx={4}>
             <Dialog.Header>
-              <Dialog.Title>期限を設定</Dialog.Title>
+              <Dialog.Title color="gray.800">期限を設定</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
@@ -850,8 +850,8 @@ function TasksPageContent() {
       {/* Goal追加モーダル */}
       <Dialog.Root open={isAddGoalModalOpen} onOpenChange={(e) => setIsAddGoalModalOpen(e.open)}>
         <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="400px">
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="400px" mx={4}>
             <Dialog.Header>
               <Dialog.Title color="gray.800">新しいGoalを追加</Dialog.Title>
               <Dialog.CloseTrigger />

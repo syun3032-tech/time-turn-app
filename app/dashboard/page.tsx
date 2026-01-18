@@ -838,10 +838,10 @@ export default function DashboardPage() {
       {/* 会話履歴モーダル */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
         <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="600px" maxH="80vh">
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="600px" maxH="80vh" mx={4}>
             <Dialog.Header>
-              <Dialog.Title>会話履歴</Dialog.Title>
+              <Dialog.Title color="gray.800">会話履歴</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body overflowY="auto">

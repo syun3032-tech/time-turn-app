@@ -468,11 +468,11 @@ export default function LogPage() {
       {/* カレンダーモーダル */}
       <Dialog.Root open={isCalendarOpen} onOpenChange={(e) => setIsCalendarOpen(e.open)}>
         <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW={{ base: "95vw", md: "400px" }} mx="auto">
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW={{ base: "95vw", md: "400px" }} mx={4}>
             <Dialog.Header>
               <Flex justify="space-between" align="center" w="full">
-                <Dialog.Title>アクティビティ</Dialog.Title>
+                <Dialog.Title color="gray.800">アクティビティ</Dialog.Title>
                 <Button
                   size="sm"
                   variant="ghost"
