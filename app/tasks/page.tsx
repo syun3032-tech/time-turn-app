@@ -900,15 +900,15 @@ function TasksPageContent() {
         <Dialog.Positioner>
           <Dialog.Content maxW="400px">
             <Dialog.Header>
-              <Dialog.Title>タスク完了！</Dialog.Title>
+              <Dialog.Title color="gray.800">タスク完了！</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="stretch" gap={4}>
-                <Text fontSize="md" color="gray.700">
+                <Text fontSize="md" color="gray.800">
                   おめでとうございます！
                 </Text>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="sm" color="gray.700">
                   振り返りメモを書いてみませんか？（任意）
                 </Text>
                 <Textarea
