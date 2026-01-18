@@ -476,6 +476,12 @@ function TasksPageContent() {
   const [reflectionNote, setReflectionNote] = useState("");
   const [completingNode, setCompletingNode] = useState<any>(null);
 
+  // 子要素追加モーダル用state
+  const [isAddChildModalOpen, setIsAddChildModalOpen] = useState(false);
+  const [addChildParentId, setAddChildParentId] = useState<string>("");
+  const [addChildType, setAddChildType] = useState<string>("");
+  const [newChildTitle, setNewChildTitle] = useState("");
+
 
   // 認証チェック
   useEffect(() => {
@@ -548,16 +554,22 @@ function TasksPageContent() {
   };
 
   const handleAddChild = (parentId: string, type: string) => {
-    const title = prompt(`新しい${type}の名前を入力してください:`);
-    if (!title) return;
+    setAddChildParentId(parentId);
+    setAddChildType(type);
+    setNewChildTitle("");
+    setIsAddChildModalOpen(true);
+  };
+
+  const handleSaveNewChild = () => {
+    if (!newChildTitle.trim() || !addChildParentId) return;
 
     const newNode: any = {
-      id: `${type.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-      title: `${type}: ${title}`,
-      children: type === "Task" ? undefined : [],
+      id: `${addChildType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      title: `${addChildType}: ${newChildTitle.trim()}`,
+      children: addChildType === "Task" ? undefined : [],
     };
 
-    if (type === "Task") {
+    if (addChildType === "Task") {
       newNode.ai = false;
       newNode.status = "未着手";
     }
@@ -565,7 +577,7 @@ function TasksPageContent() {
     // Recursively find and update the parent node
     const updateTree = (nodes: any[]): any[] => {
       return nodes.map((node) => {
-        if (node.id === parentId) {
+        if (node.id === addChildParentId) {
           return {
             ...node,
             children: [...(node.children || []), newNode],
@@ -585,9 +597,11 @@ function TasksPageContent() {
     // Auto-expand the parent node
     setExpandedNodes((prev) => {
       const newSet = new Set(prev);
-      newSet.add(parentId);
+      newSet.add(addChildParentId);
       return newSet;
     });
+
+    setIsAddChildModalOpen(false);
   };
 
   const handleAddGoal = () => {
@@ -864,6 +878,8 @@ function TasksPageContent() {
                     placeholder="Goal名を入力..."
                     value={newGoalTitle}
                     onChange={(e) => setNewGoalTitle(e.target.value)}
+                    color="gray.800"
+                    _placeholder={{ color: "gray.500" }}
                   />
                 </Box>
                 <Box>
@@ -919,6 +935,8 @@ function TasksPageContent() {
                   value={reflectionNote}
                   onChange={(e) => setReflectionNote(e.target.value)}
                   rows={4}
+                  color="gray.800"
+                  _placeholder={{ color: "gray.500" }}
                 />
               </VStack>
             </Dialog.Body>
@@ -940,6 +958,48 @@ function TasksPageContent() {
                   スキップして完了
                 </Button>
               </VStack>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
+      {/* 子要素追加モーダル */}
+      <Dialog.Root open={isAddChildModalOpen} onOpenChange={(e) => {
+        if (!e.open) {
+          setIsAddChildModalOpen(false);
+          setNewChildTitle("");
+        }
+      }}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="400px" mx={4}>
+            <Dialog.Header>
+              <Dialog.Title color="gray.800">新しい{addChildType}を追加</Dialog.Title>
+              <Dialog.CloseTrigger />
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="stretch" gap={4}>
+                <Box>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2} color="gray.800">{addChildType}名</Text>
+                  <Input
+                    placeholder={`${addChildType}名を入力...`}
+                    value={newChildTitle}
+                    onChange={(e) => setNewChildTitle(e.target.value)}
+                    color="gray.800"
+                    _placeholder={{ color: "gray.500" }}
+                  />
+                </Box>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <HStack w="full" justify="flex-end" gap={2}>
+                <Button variant="outline" onClick={() => setIsAddChildModalOpen(false)}>
+                  キャンセル
+                </Button>
+                <Button colorScheme="teal" onClick={handleSaveNewChild} disabled={!newChildTitle.trim()}>
+                  追加
+                </Button>
+              </HStack>
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>
