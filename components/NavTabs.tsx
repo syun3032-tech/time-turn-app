@@ -7,7 +7,7 @@ import { FiActivity, FiHome, FiList, FiUser } from "react-icons/fi";
 
 const tabs = [
   { href: "/dashboard", label: "ホーム", icon: FiHome },
-  { href: "/tasks", label: "タスク", icon: FiList },
+  { href: "/tasks", label: "目標", icon: FiList },
   { href: "/log", label: "ログ", icon: FiActivity },
   { href: "/profile", label: "プロフィール", icon: FiUser },
 ];
