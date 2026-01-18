@@ -464,7 +464,6 @@ function TasksPageContent() {
 
   const [tree, setTree] = useState<TaskNode[]>(initialTreeBackup as TaskNode[]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [nodeCounter, setNodeCounter] = useState(20); // Start from 20 since we have 19 tasks
   const [showArchived, setShowArchived] = useState(false);
 
   // Goal追加モーダル用state
@@ -548,7 +547,7 @@ function TasksPageContent() {
     if (!title) return;
 
     const newNode: any = {
-      id: `${type.toLowerCase()}-${nodeCounter}`,
+      id: `${type.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
       title: `${type}: ${title}`,
       children: type === "Task" ? undefined : [],
     };
@@ -557,8 +556,6 @@ function TasksPageContent() {
       newNode.ai = false;
       newNode.status = "未着手";
     }
-
-    setNodeCounter(nodeCounter + 1);
 
     // Recursively find and update the parent node
     const updateTree = (nodes: any[]): any[] => {
@@ -606,13 +603,11 @@ function TasksPageContent() {
     };
 
     const newGoal = {
-      id: `goal-${nodeCounter}`,
+      id: `goal-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
       title: `Goal: ${newGoalTitle}`,
       children: [],
       endDate: formatDate(newGoalEndDate),
     };
-
-    setNodeCounter(nodeCounter + 1);
     setTree([...tree, newGoal]);
     setIsAddGoalModalOpen(false);
   };
@@ -780,16 +775,18 @@ function TasksPageContent() {
           />
         ))}
 
-        {/* Add Goal button - always show at bottom */}
-        <Button
-          size="sm"
-          variant="outline"
-          colorScheme="teal"
-          w="full"
-          onClick={handleAddGoal}
-        >
-          + Goalを追加
-        </Button>
+        {/* Add Goal button - only show when nothing is expanded */}
+        {expandedNodes.size === 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            colorScheme="teal"
+            w="full"
+            onClick={handleAddGoal}
+          >
+            + Goalを追加
+          </Button>
+        )}
       </VStack>
 
       <NavTabs />
@@ -812,8 +809,7 @@ function TasksPageContent() {
                     onChange={(date) => setTempEndDate(date)}
                     dateFormat="yyyy/MM/dd"
                     inline
-                    locale="ja"
-                  />
+                                      />
                 </Box>
               </VStack>
             </Dialog.Body>
@@ -857,8 +853,7 @@ function TasksPageContent() {
                     onChange={(date) => setNewGoalEndDate(date)}
                     dateFormat="yyyy/MM/dd"
                     inline
-                    locale="ja"
-                  />
+                                      />
                 </Box>
               </VStack>
             </Dialog.Body>
