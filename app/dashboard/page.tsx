@@ -16,6 +16,7 @@ import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
 import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { SettingsModal } from "@/components/SettingsModal";
+import { FiSettings } from "react-icons/fi";
 import type { UserProfile } from "@/lib/firebase/firestore-types";
 
 interface Message {
@@ -548,7 +549,10 @@ export default function DashboardPage() {
             variant="ghost"
             onClick={() => setShowSettings(true)}
           >
-            設定
+            <HStack gap={1}>
+              <FiSettings />
+              <Text>設定</Text>
+            </HStack>
           </Button>
         </HStack>
       </Box>
