@@ -178,7 +178,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
 
   // Tempo風: 子要素があるかどうかで表示を切り替え
   const showProgressBar = hasChildren; // 子があれば進捗バー
-  const showCheckbox = isTask && !isArchived; // Taskのみチェックボックス表示
+  const showCheckbox = !hasChildren && !isArchived; // 子がなければチェックボックス表示
   const progress = hasChildren ? calculateProgress(node) : 0;
 
   // Check if any child is expanded
