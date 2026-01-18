@@ -335,47 +335,72 @@ export default function DashboardPage() {
   };
 
   // ユーザーの返答からヒアリング項目を検出して更新
-  // 1メッセージにつき最大1項目だけ検出（急に100%にならないように）
+  // AIの前の質問とユーザーの回答の両方を考慮
   const detectAndUpdateHearing = (userMsg: string) => {
     const newProgress = { ...hearingProgress };
     const newSummary = { ...hearingSummary };
     let detected = false;
 
-    // Why（動機）の検出 - AIが「なんで」「きっかけ」を聞いた後の返答
-    // より具体的なパターンに限定
+    // 直前のAIメッセージを取得
+    const lastAIMessage = messages.filter(m => m.role === "assistant").pop()?.content || "";
+
+    // 興味本位の質問は無視（「個人的に気になる」が含まれていたらスキップ）
+    const isCuriosityQuestion = /個人的に気になる/.test(lastAIMessage);
+    if (isCuriosityQuestion) {
+      // 興味本位の質問への回答なので、進捗には影響しない
+      return newProgress;
+    }
+
+    // === Why（動機）の検出 ===
     if (!detected && !hearingProgress.why) {
-      // 理由を述べるパターン: 〜だから、〜ので、〜のために、〜って思って
-      if (/だから|ので|のため|って思|と思って|理由は|きっかけは/.test(userMsg)) {
+      // AIが動機を聞いた: なんで、きっかけ、理由
+      const aiAskedWhy = /なんで|きっかけ|理由|どうして|なぜ/.test(lastAIMessage);
+      // ユーザーが理由を述べた
+      const userAnsweredWhy = /だから|ので|のため|って思|と思って|理由は|きっかけは|したい|たくて|ほしくて/.test(userMsg);
+
+      if (aiAskedWhy || userAnsweredWhy) {
         newProgress.why = true;
         newSummary.why = userMsg;
         detected = true;
       }
     }
 
-    // 現状の検出 - AIが「今どんな状況」を聞いた後の返答
+    // === 現状の検出 ===
     if (!detected && !hearingProgress.current) {
-      // 現状を述べるパターン: 今は〜、まだ〜、〜したことない、〜やってる
-      if (/今は|まだ|したことない|やってない|やってる|始めた|経験/.test(userMsg)) {
+      // AIが現状を聞いた: 今、状況、経験、やったこと
+      const aiAskedCurrent = /今は|状況|経験|やったこと|これまで|現在/.test(lastAIMessage);
+      // ユーザーが現状を述べた
+      const userAnsweredCurrent = /今は|まだ|したことない|やってない|やってる|始めた|経験|初心者|未経験|ちょっと/.test(userMsg);
+
+      if (aiAskedCurrent || userAnsweredCurrent) {
         newProgress.current = true;
         newSummary.current = userMsg;
         detected = true;
       }
     }
 
-    // ゴールの検出 - AIが「どこまで目指す」を聞いた後の返答
+    // === ゴールの検出 ===
     if (!detected && !hearingProgress.target) {
-      // 目標を述べるパターン: 〜になりたい、〜レベル、〜できるように
-      if (/になりたい|レベル|できるように|合格したい|受かりたい|目指し/.test(userMsg)) {
+      // AIがゴールを聞いた: どこまで、目指す、具体的に、どうなりたい
+      const aiAskedTarget = /どこまで|目指|具体的|どうなりたい|レベル|ゴール/.test(lastAIMessage);
+      // ユーザーがゴールを述べた
+      const userAnsweredTarget = /になりたい|レベル|できるように|合格したい|受かりたい|目指し|達成|到達|ぐらい/.test(userMsg);
+
+      if (aiAskedTarget || userAnsweredTarget) {
         newProgress.target = true;
         newSummary.target = userMsg;
         detected = true;
       }
     }
 
-    // 期限の検出 - AIが「いつまでに」を聞いた後の返答
+    // === 期限の検出 ===
     if (!detected && !hearingProgress.timeline) {
-      // 期限を述べるパターン: 〜月まで、来年、今年中、〜ヶ月で
-      if (/月まで|年まで|来年|今年|ヶ月|週間|日まで|以内/.test(userMsg)) {
+      // AIが期限を聞いた: いつまで、期限、期間
+      const aiAskedTimeline = /いつまで|期限|期間|いつ頃|目標時期/.test(lastAIMessage);
+      // ユーザーが期限を述べた
+      const userAnsweredTimeline = /月まで|年まで|来年|今年|ヶ月|週間|日まで|以内|年末|年度|春|夏|秋|冬|202\d/.test(userMsg);
+
+      if (aiAskedTimeline || userAnsweredTimeline) {
         newProgress.timeline = true;
         newSummary.timeline = userMsg;
         detected = true;
