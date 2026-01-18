@@ -96,7 +96,7 @@ export default function TaskRunPage() {
           <Heading size="sm">生成結果プレビュー</Heading>
         </Card.Header>
         <Card.Body>
-          <Text color="gray.500" mb={3}>
+          <Text color="gray.600" mb={3}>
             ※スタブです。後で実APIを接続。
           </Text>
           <Textarea placeholder="ここにAIの生成結果が表示される想定" minH="180px" />

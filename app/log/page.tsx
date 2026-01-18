@@ -337,7 +337,7 @@ export default function LogPage() {
   return (
     <Box px={{ base: 2, md: 4 }} py={{ base: 4, md: 6 }} bg="gray.50" minH="100vh" pb="80px">
       <Flex justify="space-between" align="center" mb={{ base: 4, md: 6 }} flexWrap="wrap" gap={2}>
-        <Heading size={{ base: "sm", md: "md" }}>実績ログ</Heading>
+        <Heading size={{ base: "sm", md: "md" }} color="gray.800">実績ログ</Heading>
         <Badge colorScheme="green" fontSize={{ base: "2xs", md: "xs" }}>
           {totalTasks}個完了
         </Badge>
@@ -394,17 +394,17 @@ export default function LogPage() {
       </Card.Root>
 
       {/* タイムライン */}
-      <Heading size="sm" mb={4}>タイムライン</Heading>
+      <Heading size="sm" mb={4} color="gray.800">タイムライン</Heading>
 
       {isLoading ? (
-        <Text color="gray.500" textAlign="center" py={8}>読み込み中...</Text>
+        <Text color="gray.600" textAlign="center" py={8}>読み込み中...</Text>
       ) : completedTasks.length === 0 ? (
         <Card.Root>
           <Card.Body>
             <VStack py={8} gap={2}>
               <FiCheckCircle size={48} color="gray" />
-              <Text color="gray.500">まだ完了したタスクがありません</Text>
-              <Text fontSize="sm" color="gray.400">タスクを完了すると、ここに表示されます</Text>
+              <Text color="gray.600">まだ完了したタスクがありません</Text>
+              <Text fontSize="sm" color="gray.600">タスクを完了すると、ここに表示されます</Text>
             </VStack>
           </Card.Body>
         </Card.Root>

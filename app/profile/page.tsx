@@ -144,7 +144,7 @@ export default function ProfilePage() {
         </Card.Header>
         <Card.Body>
           {taskTree.length === 0 ? (
-            <Text fontSize="sm" color="gray.500">目標を設定してください</Text>
+            <Text fontSize="sm" color="gray.600">目標を設定してください</Text>
           ) : (
             <VStack align="stretch" gap={3}>
               {taskTree.map((goal) => {
@@ -163,7 +163,7 @@ export default function ProfilePage() {
                   >
                     <Text fontWeight="semibold" fontSize="sm" mb={2}>{title}</Text>
                     <HStack justify="space-between" mb={1}>
-                      <Text fontSize="xs" color="gray.500">進捗</Text>
+                      <Text fontSize="xs" color="gray.700">進捗</Text>
                       <Text fontSize="xs" fontWeight="bold" color={progress === 100 ? "green.500" : "teal.500"}>
                         {progress}%
                       </Text>
@@ -229,7 +229,7 @@ export default function ProfilePage() {
 
           {/* 各パラメータの説明 */}
           <VStack align="stretch" gap={3}>
-            <Text fontSize="xs" fontWeight="semibold" color="gray.500">各能力の説明</Text>
+            <Text fontSize="xs" fontWeight="semibold" color="gray.700">各能力の説明</Text>
             {radarStats.map((stat) => (
               <Box key={stat.label} p={3} bg="gray.50" borderRadius="md">
                 <HStack justify="space-between" mb={1}>
@@ -237,7 +237,7 @@ export default function ProfilePage() {
                   <Text fontSize="sm" fontWeight="bold" color="teal.500">{stat.value}%</Text>
                 </HStack>
                 <Text fontSize="xs" color="gray.600" mb={1}>{stat.description}</Text>
-                <Text fontSize="2xs" color="gray.400">📊 {stat.source}</Text>
+                <Text fontSize="2xs" color="gray.600">📊 {stat.source}</Text>
               </Box>
             ))}
           </VStack>

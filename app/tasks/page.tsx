@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input } from "@chakra-ui/react";
+import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input, Textarea } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { useState, useRef, useEffect, Suspense } from "react";
@@ -264,7 +264,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               {showProgressBar && (
                 <Box w="full">
                   <HStack justify="space-between" mb={1}>
-                    <Text fontSize="xs" color="gray.500">進捗</Text>
+                    <Text fontSize="xs" color="gray.700">進捗</Text>
                     <Text fontSize="xs" fontWeight="bold" color={progress === 100 ? "green.500" : "teal.500"}>{progress}%</Text>
                   </HStack>
                   <Progress.Root value={progress} borderRadius="md" size="sm">
@@ -296,7 +296,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                   >
                     {/* 空のチェックボックス */}
                   </Box>
-                  <Text fontSize="sm" color="gray.500">未完了</Text>
+                  <Text fontSize="sm" color="gray.700">未完了</Text>
                 </HStack>
               )}
 
@@ -308,7 +308,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               )}
 
               {!isTask && !showProgressBar && (
-                <Flex gap={2} fontSize={{ base: "2xs", md: "xs" }} color="gray.500" flexWrap="wrap">
+                <Flex gap={2} fontSize={{ base: "2xs", md: "xs" }} color="gray.700" flexWrap="wrap">
                   <Text>OKR</Text>
                   <Text>KPI</Text>
                   <Text>Action Map</Text>
@@ -367,7 +367,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
 
                   {/* メモ表示（閉じている時） */}
                   {!isMemoOpen && node.memo && (
-                    <Text fontSize="xs" color="gray.500" flex={1}>
+                    <Text fontSize="xs" color="gray.700" flex={1}>
                       {node.memo}
                     </Text>
                   )}
@@ -470,6 +470,11 @@ function TasksPageContent() {
   const [isAddGoalModalOpen, setIsAddGoalModalOpen] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState("");
   const [newGoalEndDate, setNewGoalEndDate] = useState<Date | null>(null);
+
+  // 振り返りメモモーダル用state
+  const [isReflectionModalOpen, setIsReflectionModalOpen] = useState(false);
+  const [reflectionNote, setReflectionNote] = useState("");
+  const [completingNode, setCompletingNode] = useState<any>(null);
 
 
   // 認証チェック
@@ -656,6 +661,14 @@ function TasksPageContent() {
 
   const handleCompleteTask = async (node: any) => {
     if (!user) return;
+    // モーダルを開いて振り返りメモを入力
+    setCompletingNode(node);
+    setReflectionNote("");
+    setIsReflectionModalOpen(true);
+  };
+
+  const handleConfirmComplete = async (withNote: boolean) => {
+    if (!user || !completingNode) return;
 
     try {
       // タスクタイプを取得
@@ -666,19 +679,20 @@ function TasksPageContent() {
         return 'Task';
       };
 
-      // Firestoreに保存
+      // Firestoreに保存（振り返りメモ付き）
       await saveCompletedTask(user.uid, {
-        taskId: node.id,
-        taskTitle: node.title,
-        taskType: getTaskType(node.title),
+        taskId: completingNode.id,
+        taskTitle: completingNode.title,
+        taskType: getTaskType(completingNode.title),
         completedAt: new Date(),
-        aiCapable: node.ai || false
+        aiCapable: completingNode.ai || false,
+        reflectionNote: withNote ? reflectionNote.trim() : undefined
       });
 
       // ツリーからアーカイブに移動
       const archiveNode = (nodes: any[]): any[] => {
         return nodes.map((n) => {
-          if (n.id === node.id) {
+          if (n.id === completingNode.id) {
             return {
               ...n,
               archived: true,
@@ -695,6 +709,9 @@ function TasksPageContent() {
       };
 
       setTree(archiveNode(tree));
+      setIsReflectionModalOpen(false);
+      setCompletingNode(null);
+      setReflectionNote("");
       console.log("タスク完了！");
     } catch (error) {
       console.error("Failed to complete task:", error);
@@ -744,10 +761,10 @@ function TasksPageContent() {
         flexWrap="wrap"
         gap={2}
       >
-        <Heading size={{ base: "sm", md: "md" }}>タスクツリー</Heading>
+        <Heading size={{ base: "sm", md: "md" }} color="gray.800">タスクツリー</Heading>
         <HStack gap={2} flexWrap="wrap">
           <HStack>
-            <Text fontSize="sm">完了済みを表示</Text>
+            <Text fontSize="sm" color="gray.800">完了済みを表示</Text>
             <Switch.Root checked={showArchived} onCheckedChange={(e) => setShowArchived(e.checked)}>
               <Switch.HiddenInput />
               <Switch.Control>
@@ -833,13 +850,13 @@ function TasksPageContent() {
         <Dialog.Positioner>
           <Dialog.Content maxW="400px">
             <Dialog.Header>
-              <Dialog.Title>新しいGoalを追加</Dialog.Title>
+              <Dialog.Title color="gray.800">新しいGoalを追加</Dialog.Title>
               <Dialog.CloseTrigger />
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="stretch" gap={4}>
                 <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>Goal名</Text>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2} color="gray.800">Goal名</Text>
                   <Input
                     placeholder="Goal名を入力..."
                     value={newGoalTitle}
@@ -847,7 +864,7 @@ function TasksPageContent() {
                   />
                 </Box>
                 <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>終了日（任意）</Text>
+                  <Text fontSize="sm" fontWeight="semibold" mb={2} color="gray.800">終了日（任意）</Text>
                   <DatePicker
                     selected={newGoalEndDate}
                     onChange={(date) => setNewGoalEndDate(date)}
@@ -866,6 +883,60 @@ function TasksPageContent() {
                   追加
                 </Button>
               </HStack>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
+      {/* 振り返りメモモーダル */}
+      <Dialog.Root open={isReflectionModalOpen} onOpenChange={(e) => {
+        if (!e.open) {
+          setIsReflectionModalOpen(false);
+          setCompletingNode(null);
+          setReflectionNote("");
+        }
+      }}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content maxW="400px">
+            <Dialog.Header>
+              <Dialog.Title>タスク完了！</Dialog.Title>
+              <Dialog.CloseTrigger />
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="stretch" gap={4}>
+                <Text fontSize="md" color="gray.700">
+                  おめでとうございます！
+                </Text>
+                <Text fontSize="sm" color="gray.600">
+                  振り返りメモを書いてみませんか？（任意）
+                </Text>
+                <Textarea
+                  placeholder="学んだこと、次に活かしたいこと..."
+                  value={reflectionNote}
+                  onChange={(e) => setReflectionNote(e.target.value)}
+                  rows={4}
+                />
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <VStack w="full" gap={2}>
+                <Button
+                  colorScheme="teal"
+                  w="full"
+                  onClick={() => handleConfirmComplete(true)}
+                  disabled={!reflectionNote.trim()}
+                >
+                  メモを保存して完了
+                </Button>
+                <Button
+                  variant="ghost"
+                  w="full"
+                  onClick={() => handleConfirmComplete(false)}
+                >
+                  スキップして完了
+                </Button>
+              </VStack>
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>

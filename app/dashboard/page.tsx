@@ -847,7 +847,7 @@ export default function DashboardPage() {
             <Dialog.Body overflowY="auto">
               <VStack align="stretch" gap={3}>
                 {messages.length === 0 ? (
-                  <Text color="gray.500" textAlign="center" py={8}>
+                  <Text color="gray.600" textAlign="center" py={8}>
                     まだ会話がありません
                   </Text>
                 ) : (
@@ -858,7 +858,7 @@ export default function DashboardPage() {
                           <Card.Body>
                             <HStack mb={1}>
                               <Badge colorScheme="purple" size="sm">ゆり</Badge>
-                              <Text fontSize="xs" color="gray.500">
+                              <Text fontSize="xs" color="gray.600">
                                 {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
                               </Text>
                             </HStack>
@@ -871,7 +871,7 @@ export default function DashboardPage() {
                         <Card.Root bg="blue.50" ml="auto" maxW="85%">
                           <Card.Body>
                             <HStack mb={1} justify="flex-end">
-                              <Text fontSize="xs" color="gray.500">
+                              <Text fontSize="xs" color="gray.600">
                                 {Math.floor((index + 1) / 2) + 1}回目の質問
                               </Text>
                               <Badge colorScheme="blue" size="sm">あなた</Badge>
