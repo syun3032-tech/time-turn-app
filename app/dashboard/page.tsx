@@ -29,14 +29,14 @@ interface Message {
 // ヒアリング進捗を追跡する型
 interface HearingProgress {
   why: boolean;       // なぜやりたいか
-  current: boolean;   // 現状
+  current: boolean;   // 現状（課題も含む）
   target: boolean;    // 目標の詳細
   timeline: boolean;  // いつまでに
 }
 
 const HEARING_ITEMS = [
   { key: "why", label: "Why（動機）", question: "なんでそれやりたいの？きっかけは？" },
-  { key: "current", label: "現状", question: "今はどんな状況？これまでやったことある？" },
+  { key: "current", label: "現状", question: "今どんな状況？困ってることや課題はある？" },
   { key: "target", label: "ゴール", question: "具体的にどうなりたい？どこまで目指してる？" },
   { key: "timeline", label: "期限", question: "いつまでに達成したい？" },
 ] as const;
