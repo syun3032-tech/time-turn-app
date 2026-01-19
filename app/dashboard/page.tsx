@@ -535,10 +535,10 @@ export default function DashboardPage() {
 
       // Few-shot examples を先頭に追加（AIに短い会話を学習させる）
       const fewShotExamples: Message[] = [
-        { role: "user", content: "阪大行きたい" },
-        { role: "assistant", content: "いいね！なんで？きっかけあるの？" },
-        { role: "user", content: "周りにイキれるから" },
-        { role: "assistant", content: "そうなの！？ なんでイキリたいの？" },
+        { role: "user", content: "新しいこと始めたい" },
+        { role: "assistant", content: "いいね！どんなこと？" },
+        { role: "user", content: "まだ決まってないけど何か挑戦したくて" },
+        { role: "assistant", content: "そうなんだ！何かきっかけあったの？" },
       ];
 
       // === プラン3: トークン節約 ===
