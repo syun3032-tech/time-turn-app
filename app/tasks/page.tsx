@@ -164,10 +164,11 @@ interface TreeNodeProps {
 }
 
 function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, onRestoreTask, highlightedId, showArchived }: TreeNodeProps) {
-  const isTask = node.title?.startsWith("Task:");
-  const isGoal = node.title?.startsWith("Goal:");
-  const isProject = node.title?.startsWith("Project:");
-  const isMilestone = node.title?.startsWith("Milestone:");
+  // typeフィールドまたはタイトルプレフィックスで判定（両方の形式をサポート）
+  const isTask = node.type === "Task" || node.title?.startsWith("Task:");
+  const isGoal = node.type === "Goal" || node.title?.startsWith("Goal:");
+  const isProject = node.type === "Project" || node.title?.startsWith("Project:");
+  const isMilestone = node.type === "Milestone" || node.title?.startsWith("Milestone:");
   const canHaveChildren = isGoal || isProject || isMilestone; // Task以外は子を持てる
   const hasChildren = node.children && node.children.length > 0;
   const isArchived = node.archived === true;
@@ -457,14 +458,14 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               onClick={(e) => {
                 e.stopPropagation();
                 const childType =
-                  node.title.startsWith("Goal:") ? "Project" :
-                  node.title.startsWith("Project:") ? "Milestone" :
-                  node.title.startsWith("Milestone:") ? "Task" :
+                  isGoal ? "Project" :
+                  isProject ? "Milestone" :
+                  isMilestone ? "Task" :
                   "Item";
                 onAddChild(node.id, childType);
               }}
             >
-              + {node.title.startsWith("Goal:") ? "Project" : node.title.startsWith("Project:") ? "Milestone" : "Task"}を追加
+              + {isGoal ? "Project" : isProject ? "Milestone" : "Task"}を追加
             </Button>
           )}
         </Box>

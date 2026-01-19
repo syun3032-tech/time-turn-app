@@ -44,8 +44,10 @@ export function TaskBreakdownPreview({
     const indent = level * 20;
     const hasChildren = node.children && node.children.length > 0;
 
-    // ノードタイプを判定
-    const nodeType = node.title?.startsWith("Goal:")
+    // ノードタイプを判定（typeフィールドまたはタイトルプレフィックスで判定）
+    const nodeType = node.type
+      ? node.type
+      : node.title?.startsWith("Goal:")
       ? "Goal"
       : node.title?.startsWith("Project:")
       ? "Project"
