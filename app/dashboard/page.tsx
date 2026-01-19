@@ -11,14 +11,15 @@ import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree,
 import { TaskNode } from "@/types/task-tree";
 import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, type UsageData } from "@/lib/firebase/firestore";
+import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, deleteConversation, type UsageData } from "@/lib/firebase/firestore";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
 import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { SettingsModal } from "@/components/SettingsModal";
-import { FiSettings } from "react-icons/fi";
-import type { UserProfile } from "@/lib/firebase/firestore-types";
+import { ConversationSidebar } from "@/components/ConversationSidebar";
+import { FiSettings, FiMenu } from "react-icons/fi";
+import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
 
 interface Message {
   role: "user" | "assistant";
@@ -84,6 +85,11 @@ export default function DashboardPage() {
   // 利用制限関連
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [isLimitReached, setIsLimitReached] = useState(false);
+
+  // 会話履歴サイドバー関連
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
@@ -196,6 +202,22 @@ export default function DashboardPage() {
     loadUsageAndUpdateStreak();
   }, [user]);
 
+  // 会話一覧を読み込み
+  useEffect(() => {
+    if (!user) return;
+
+    const loadConversations = async () => {
+      try {
+        const convs = await getConversations(user.uid);
+        setConversations(convs);
+      } catch (error) {
+        console.error("Failed to load conversations:", error);
+      }
+    };
+
+    loadConversations();
+  }, [user]);
+
   // 表情を5秒後にノーマルに戻すヘルパー関数
   const setExpressionWithAutoReset = (expression: Expression) => {
     // 既存のタイマーをクリア
@@ -222,6 +244,116 @@ export default function DashboardPage() {
       }
     };
   }, []);
+
+  // === 会話管理ハンドラー ===
+
+  // 新規会話を作成
+  const handleNewConversation = async () => {
+    if (!user) return;
+
+    try {
+      const newConvId = await createConversation(user.uid, '新しい会話');
+      setCurrentConversationId(newConvId);
+      setMessages([]);
+      setCharacterMessage("今日はどのタスクから行く？");
+      setTaskBreakdownStage("normal");
+      setGoalContext("");
+      setHearingProgress({ why: false, current: false, target: false, timeline: false });
+      setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+
+      // 会話一覧を再読み込み
+      const convs = await getConversations(user.uid);
+      setConversations(convs);
+    } catch (error) {
+      console.error("Failed to create conversation:", error);
+    }
+  };
+
+  // 会話を選択
+  const handleSelectConversation = async (conversationId: string) => {
+    if (!user) return;
+
+    try {
+      setCurrentConversationId(conversationId);
+
+      // メッセージを読み込み
+      const msgs = await getConversationMessages(conversationId);
+      const formattedMsgs: Message[] = msgs.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+      setMessages(formattedMsgs);
+
+      // 最後のアシスタントメッセージを表示
+      const lastAssistant = formattedMsgs.filter(m => m.role === "assistant").pop();
+      if (lastAssistant) {
+        setCharacterMessage(lastAssistant.content);
+      } else {
+        setCharacterMessage("今日はどのタスクから行く？");
+      }
+
+      // ステージをリセット
+      setTaskBreakdownStage("normal");
+    } catch (error) {
+      console.error("Failed to load conversation:", error);
+    }
+  };
+
+  // タイトルを更新
+  const handleUpdateConversationTitle = async (conversationId: string, title: string) => {
+    try {
+      await updateConversationTitle(conversationId, title, true);
+      // 会話一覧を再読み込み
+      if (user) {
+        const convs = await getConversations(user.uid);
+        setConversations(convs);
+      }
+    } catch (error) {
+      console.error("Failed to update title:", error);
+    }
+  };
+
+  // 会話を削除
+  const handleDeleteConversation = async (conversationId: string) => {
+    try {
+      await deleteConversation(conversationId);
+
+      // 削除した会話が現在表示中なら、メッセージをクリア
+      if (currentConversationId === conversationId) {
+        setCurrentConversationId(null);
+        setMessages([]);
+        setCharacterMessage("今日はどのタスクから行く？");
+      }
+
+      // 会話一覧を再読み込み
+      if (user) {
+        const convs = await getConversations(user.uid);
+        setConversations(convs);
+      }
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+    }
+  };
+
+  // AIでタイトルを生成
+  const generateConversationTitle = async (firstMessage: string, conversationId: string) => {
+    try {
+      // 簡易的にタイトル生成（最初のメッセージを短く）
+      const title = firstMessage.length > 20
+        ? firstMessage.substring(0, 20) + "..."
+        : firstMessage;
+
+      await updateConversationTitle(conversationId, title, false);
+
+      // 会話一覧を再読み込み
+      if (user) {
+        const convs = await getConversations(user.uid);
+        setConversations(convs);
+      }
+    } catch (error) {
+      console.error("Failed to generate title:", error);
+    }
+  };
 
   const handleReflectToTaskTree = async () => {
     if (messages.length === 0) return;
@@ -461,9 +593,26 @@ export default function DashboardPage() {
     setMessage("");
     setIsLoading(true);
 
+    // 会話IDがなければ新規作成
+    let convId = currentConversationId;
+    if (!convId) {
+      try {
+        convId = await createConversation(user.uid, '新しい会話');
+        setCurrentConversationId(convId);
+      } catch (error) {
+        console.error("Failed to create conversation:", error);
+      }
+    }
+
     // Firestoreにユーザーメッセージを保存
     try {
-      await saveChatMessage(user.uid, 'user', message);
+      if (convId) {
+        await addMessageToConversation(convId, 'user', message);
+        // 最初のメッセージならタイトルを生成
+        if (messages.length === 0) {
+          await generateConversationTitle(message, convId);
+        }
+      }
     } catch (error) {
       console.error("Failed to save user message:", error);
     }
@@ -586,7 +735,9 @@ export default function DashboardPage() {
 
         // Firestoreにアシスタントメッセージを保存
         try {
-          await saveChatMessage(user.uid, 'assistant', response.content);
+          if (convId) {
+            await addMessageToConversation(convId, 'assistant', response.content);
+          }
         } catch (error) {
           console.error("Failed to save assistant message:", error);
         }
@@ -652,6 +803,18 @@ export default function DashboardPage() {
 
   return (
     <Box bg="#f8fafc" minH="100vh" pb="64px">
+      {/* 会話履歴サイドバー */}
+      <ConversationSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+        onUpdateTitle={handleUpdateConversationTitle}
+        onDeleteConversation={handleDeleteConversation}
+      />
+
       {/* ヘッダー */}
       <Box
         bg="white"
@@ -662,9 +825,16 @@ export default function DashboardPage() {
         borderColor="gray.200"
       >
         <HStack justify="space-between" align="center">
-          <Text fontWeight="bold" fontSize="lg" color="gray.800">
-            TimeTurn
-          </Text>
+          <HStack
+            cursor="pointer"
+            onClick={() => setIsSidebarOpen(true)}
+            _hover={{ opacity: 0.7 }}
+          >
+            <FiMenu size={20} />
+            <Text fontWeight="bold" fontSize="lg" color="gray.800">
+              TimeTurn
+            </Text>
+          </HStack>
           <Button
             size="xs"
             colorScheme="gray"

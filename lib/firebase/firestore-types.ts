@@ -127,3 +127,24 @@ export interface CompletedTask {
   aiCapable?: boolean
   createdAt: Date
 }
+
+/**
+ * 会話履歴
+ */
+export interface Conversation {
+  id: string
+  userId: string
+  title: string
+  isCustomTitle: boolean  // ユーザーが編集したらtrue
+  goalId?: string         // 紐づく目標（あれば）
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface ConversationMessage {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: Date
+}

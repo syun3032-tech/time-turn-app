@@ -24,7 +24,9 @@ import type {
   ChatMessage,
   DailyLog,
   UserProfile,
-  CompletedTask
+  CompletedTask,
+  Conversation,
+  ConversationMessage
 } from './firestore-types'
 
 // Timestamp変換ヘルパー
@@ -525,4 +527,131 @@ export async function getLoginStreak(userId: string): Promise<LoginStreakData> {
   }
 
   return { lastLoginDate, loginStreak }
+}
+
+/**
+ * Conversations（会話履歴）
+ */
+
+/**
+ * 新規会話を作成
+ */
+export async function createConversation(
+  userId: string,
+  title: string = '新しい会話'
+): Promise<string> {
+  const docRef = await addDoc(collection(db, 'conversations'), {
+    userId,
+    title,
+    isCustomTitle: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
+/**
+ * ユーザーの会話一覧を取得
+ */
+export async function getConversations(userId: string): Promise<Conversation[]> {
+  const q = query(
+    collection(db, 'conversations'),
+    where('userId', '==', userId),
+    orderBy('updatedAt', 'desc')
+  )
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+    createdAt: toDate(doc.data().createdAt),
+    updatedAt: toDate(doc.data().updatedAt),
+  } as Conversation))
+}
+
+/**
+ * 会話のタイトルを更新
+ */
+export async function updateConversationTitle(
+  conversationId: string,
+  title: string,
+  isCustomTitle: boolean = true
+): Promise<void> {
+  const docRef = doc(db, 'conversations', conversationId)
+  await updateDoc(docRef, {
+    title,
+    isCustomTitle,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/**
+ * 会話にメッセージを追加
+ */
+export async function addMessageToConversation(
+  conversationId: string,
+  role: 'user' | 'assistant',
+  content: string
+): Promise<string> {
+  // メッセージを追加
+  const messagesRef = collection(db, 'conversations', conversationId, 'messages')
+  const docRef = await addDoc(messagesRef, {
+    role,
+    content,
+    createdAt: serverTimestamp(),
+  })
+
+  // 会話のupdatedAtを更新
+  const convRef = doc(db, 'conversations', conversationId)
+  await updateDoc(convRef, {
+    updatedAt: serverTimestamp(),
+  })
+
+  return docRef.id
+}
+
+/**
+ * 会話のメッセージ一覧を取得
+ */
+export async function getConversationMessages(
+  conversationId: string
+): Promise<ConversationMessage[]> {
+  const q = query(
+    collection(db, 'conversations', conversationId, 'messages'),
+    orderBy('createdAt', 'asc')
+  )
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    conversationId,
+    ...doc.data(),
+    createdAt: toDate(doc.data().createdAt),
+  } as ConversationMessage))
+}
+
+/**
+ * 会話を削除
+ */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  // サブコレクションのメッセージも削除
+  const messagesRef = collection(db, 'conversations', conversationId, 'messages')
+  const messagesSnapshot = await getDocs(messagesRef)
+  const deletePromises = messagesSnapshot.docs.map(doc => deleteDoc(doc.ref))
+  await Promise.all(deletePromises)
+
+  // 会話本体を削除
+  await deleteDoc(doc(db, 'conversations', conversationId))
+}
+
+/**
+ * 会話に目標を紐づけ
+ */
+export async function linkConversationToGoal(
+  conversationId: string,
+  goalId: string
+): Promise<void> {
+  const docRef = doc(db, 'conversations', conversationId)
+  await updateDoc(docRef, {
+    goalId,
+    updatedAt: serverTimestamp(),
+  })
 }
