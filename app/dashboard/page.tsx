@@ -413,68 +413,54 @@ export default function DashboardPage() {
       return;
     }
 
-    // 既存Goalのリストを表示
-    const existingGoals = taskTree
-      .filter(node => node.type === "Goal")
-      .map((node, idx) => `${idx + 1}. ${node.title} (ID: ${node.id})`)
-      .join("\n");
-
-    let parentId: string | null = null;
-    if (existingGoals) {
-      const addToExisting = confirm(
-        `既存の目標に追加しますか？\n\n${existingGoals}\n\n「OK」= 既存に追加 / 「キャンセル」= 新しいGoalを作成`
-      );
-
-      if (addToExisting) {
-        const selectedIndex = prompt(`どの目標に追加しますか？番号を入力してください (1-${taskTree.filter(n => n.type === "Goal").length}):`);
-        if (selectedIndex) {
-          const index = parseInt(selectedIndex) - 1;
-          const goals = taskTree.filter(n => n.type === "Goal");
-          if (goals[index]) {
-            parentId = goals[index].id;
-          }
-        }
-      }
+    // タスクツリー構造があるかチェック
+    if (!hasTaskTreeStructure(lastAIMessage.content)) {
+      alert("タスクツリー形式の出力が見つかりませんでした。\nAIに「タスクに分解して」と依頼してください。");
+      return;
     }
 
-    // 追加するノードのタイトルと種類を取得
-    const nodeTitle = prompt("追加するタスクのタイトルを入力してください:");
-    if (!nodeTitle) return;
+    // AIメッセージをパース
+    const parsedNodes = parseTaskTreeFromMessage(lastAIMessage.content);
+    if (parsedNodes.length === 0) {
+      alert("タスクのパースに失敗しました。");
+      return;
+    }
 
-    const nodeType = prompt(
-      "種類を選んでください:\n1. Goal\n2. Project\n3. Milestone\n4. Task\n\n番号を入力:"
+    // パース結果のサマリーを表示
+    const summary = parsedNodes.map(node => {
+      const countChildren = (n: TaskNode): number => {
+        if (!n.children) return 0;
+        return n.children.length + n.children.reduce((sum, c) => sum + countChildren(c), 0);
+      };
+      return `・${node.title} (${countChildren(node) + 1}項目)`;
+    }).join("\n");
+
+    const confirmAdd = confirm(
+      `以下のタスクツリーを追加しますか？\n\n${summary}\n\n「OK」= 追加する`
     );
 
-    const typeMap: { [key: string]: "Goal" | "Project" | "Milestone" | "Task" } = {
-      "1": "Goal",
-      "2": "Project",
-      "3": "Milestone",
-      "4": "Task",
-    };
+    if (!confirmAdd) return;
 
-    const selectedType = nodeType && typeMap[nodeType] ? typeMap[nodeType] : "Goal";
-
-    // 新しいノードを作成
-    const newNode: TaskNode = {
-      id: generateNodeId(selectedType.toLowerCase()),
-      title: `${selectedType}: ${nodeTitle}`,
-      type: selectedType,
-      description: `AIヒアリングから作成`,
-      children: selectedType === "Task" ? undefined : [],
-    };
-
-    // タスクツリーに追加
-    const updatedTree = addNodeToTree(taskTree, parentId, newNode);
+    // タスクツリーに追加（parsedNodesをそのまま追加）
+    const updatedTree = [...taskTree, ...parsedNodes];
     setTaskTree(updatedTree);
     await saveTaskTreeAsync(updatedTree, user?.uid);
 
     // 成功メッセージ
-    setCharacterMessage(`「${nodeTitle}」をタスクツリーに追加しました！タスクページに移動します。`);
+    const totalItems = parsedNodes.reduce((sum, node) => {
+      const countAll = (n: TaskNode): number => {
+        if (!n.children) return 1;
+        return 1 + n.children.reduce((s, c) => s + countAll(c), 0);
+      };
+      return sum + countAll(node);
+    }, 0);
+
+    setCharacterMessage(`${totalItems}個のタスクをツリーに追加しました！🎉`);
     setExpressionWithAutoReset("wawa");
 
-    // タスクページに遷移（ハイライト付き）
+    // タスクページに遷移
     setTimeout(() => {
-      window.location.href = `/tasks?highlight=${newNode.id}`;
+      window.location.href = `/tasks?highlight=${parsedNodes[0]?.id}`;
     }, 1500);
   };
 

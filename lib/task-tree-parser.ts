@@ -4,61 +4,158 @@ import { generateNodeId } from "./task-tree-storage";
 /**
  * AIメッセージからタスクツリー構造を解析する
  *
- * 例:
+ * 対応形式1（ツリーマーカー付き）:
  * Goal: 阪大医学部に合格する
  * ├─ Project: 数学の実力を上げる
  * │  ├─ Milestone: 微積分を完璧にする
  * │  │  └─ Task: 基礎問題集1-3章
- * │  └─ Milestone: 確率統計をマスターする
- * └─ Project: 英語力を向上させる
+ *
+ * 対応形式2（フラット形式 - マーカーなし）:
+ * Goal: 阪大医学部に合格する
+ * Project: 数学の実力を上げる
+ * Milestone: 微積分を完璧にする
+ * Task: 基礎問題集1-3章
  */
 export function parseTaskTreeFromMessage(message: string): TaskNode[] {
   const lines = message.split('\n');
   const result: TaskNode[] = [];
-  const stack: { node: TaskNode; indent: number }[] = [];
 
-  for (const line of lines) {
-    // 空行をスキップ
-    if (!line.trim()) continue;
+  // ツリーマーカーがあるかチェック
+  const hasTreeMarkers = lines.some(line => /[│├└─]/.test(line));
 
-    // インデント計算（├─、│、└─などの記号を考慮）
-    const match = line.match(/^([│├└\s─]*)(Goal|Project|Milestone|Task)[:：]\s*(.+)$/);
-    if (!match) continue;
+  if (hasTreeMarkers) {
+    // ツリーマーカー形式：インデントで親子関係を判断
+    const stack: { node: TaskNode; indent: number }[] = [];
 
-    const [, indentStr, type, title] = match;
-    const indent = indentStr.replace(/[─]/g, '').length;
+    for (const line of lines) {
+      if (!line.trim()) continue;
 
-    const nodeType = type as "Goal" | "Project" | "Milestone" | "Task";
-    const newNode: TaskNode = {
-      id: generateNodeId(nodeType.toLowerCase()),
-      title: title.trim(),
-      type: nodeType,
-      description: "AIによって提案されたタスク",
-      children: nodeType === "Task" ? undefined : [],
+      const match = line.match(/^([│├└\s─]*)(Goal|Project|Milestone|Task)[:：]\s*(.+)$/);
+      if (!match) continue;
+
+      const [, indentStr, type, title] = match;
+      const indent = indentStr.replace(/[─]/g, '').length;
+
+      const nodeType = type as "Goal" | "Project" | "Milestone" | "Task";
+      const newNode: TaskNode = {
+        id: generateNodeId(nodeType.toLowerCase()),
+        title: title.trim(),
+        type: nodeType,
+        description: "AIによって提案されたタスク",
+        children: nodeType === "Task" ? undefined : [],
+      };
+
+      if (indent === 0) {
+        result.push(newNode);
+        stack.length = 0;
+        if (nodeType !== "Task") {
+          stack.push({ node: newNode, indent: 0 });
+        }
+      } else {
+        while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+          stack.pop();
+        }
+
+        if (stack.length > 0) {
+          const parent = stack[stack.length - 1].node;
+          if (parent.children) {
+            parent.children.push(newNode);
+          }
+        }
+
+        if (nodeType !== "Task") {
+          stack.push({ node: newNode, indent });
+        }
+      }
+    }
+  } else {
+    // フラット形式：ノードタイプの階層から親子関係を推論
+    // Goal > Project > Milestone > Task の順で親を決定
+
+    // 各タイプの最後のノードを追跡
+    const lastNodeByType: { [key: string]: TaskNode | null } = {
+      "Goal": null,
+      "Project": null,
+      "Milestone": null,
     };
 
-    // インデントが0なら最上位レベル
-    if (indent === 0) {
-      result.push(newNode);
-      stack.length = 0;
-      if (nodeType !== "Task") {
-        stack.push({ node: newNode, indent: 0 });
-      }
-    } else {
-      // 親ノードを探す（自分より浅いインデントの最後のノード）
-      while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-        stack.pop();
-      }
+    for (const line of lines) {
+      if (!line.trim()) continue;
 
-      if (stack.length > 0) {
-        const parent = stack[stack.length - 1].node;
-        if (parent.children) {
-          parent.children.push(newNode);
+      const match = line.match(/^(Goal|Project|Milestone|Task)[:：]\s*(.+)$/);
+      if (!match) continue;
+
+      const [, type, title] = match;
+      const nodeType = type as "Goal" | "Project" | "Milestone" | "Task";
+      const newNode: TaskNode = {
+        id: generateNodeId(nodeType.toLowerCase()),
+        title: title.trim(),
+        type: nodeType,
+        description: "AIによって提案されたタスク",
+        children: nodeType === "Task" ? undefined : [],
+      };
+
+      // 親を探す
+      let parentFound = false;
+      if (nodeType === "Goal") {
+        // Goalは常にトップレベル
+        result.push(newNode);
+        lastNodeByType["Goal"] = newNode;
+        lastNodeByType["Project"] = null;
+        lastNodeByType["Milestone"] = null;
+      } else if (nodeType === "Project") {
+        // ProjectはGoalの子
+        if (lastNodeByType["Goal"] && lastNodeByType["Goal"].children) {
+          lastNodeByType["Goal"].children.push(newNode);
+          parentFound = true;
+        }
+        lastNodeByType["Project"] = newNode;
+        lastNodeByType["Milestone"] = null;
+      } else if (nodeType === "Milestone") {
+        // MilestoneはProjectの子
+        if (lastNodeByType["Project"] && lastNodeByType["Project"].children) {
+          lastNodeByType["Project"].children.push(newNode);
+          parentFound = true;
+        } else if (lastNodeByType["Goal"] && lastNodeByType["Goal"].children) {
+          // Projectがない場合はGoalの直下
+          lastNodeByType["Goal"].children.push(newNode);
+          parentFound = true;
+        }
+        lastNodeByType["Milestone"] = newNode;
+      } else if (nodeType === "Task") {
+        // TaskはMilestone > Project > Goalの順で親を探す
+        if (lastNodeByType["Milestone"] && lastNodeByType["Milestone"].children) {
+          lastNodeByType["Milestone"].children.push(newNode);
+          parentFound = true;
+        } else if (lastNodeByType["Project"] && lastNodeByType["Project"].children) {
+          lastNodeByType["Project"].children.push(newNode);
+          parentFound = true;
+        } else if (lastNodeByType["Goal"] && lastNodeByType["Goal"].children) {
+          lastNodeByType["Goal"].children.push(newNode);
+          parentFound = true;
         }
       }
 
-      if (nodeType !== "Task") {
-        stack.push({ node: newNode, indent });
+      // 親が見つからなかった場合はトップレベルに追加（フォールバック）
+      if (!parentFound && nodeType !== "Goal") {
+        // Goalがまだない場合、暗黙のGoalを作成
+        if (result.length === 0) {
+          const implicitGoal: TaskNode = {
+            id: generateNodeId("goal"),
+            title: "目標",
+            type: "Goal",
+            description: "自動生成された目標",
+            children: [newNode],
+          };
+          result.push(implicitGoal);
+          lastNodeByType["Goal"] = implicitGoal;
+        } else {
+          // 最後のGoalに追加
+          const lastGoal = result[result.length - 1];
+          if (lastGoal.children) {
+            lastGoal.children.push(newNode);
+          }
+        }
       }
     }
   }
