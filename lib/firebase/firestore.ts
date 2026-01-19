@@ -434,3 +434,95 @@ export async function checkUsageLimit(userId: string): Promise<{
     usage,
   }
 }
+
+/**
+ * Login Streak（連続ログイン日数）
+ * ログイン時に呼び出して連続日数を更新
+ */
+export interface LoginStreakData {
+  lastLoginDate: string
+  loginStreak: number
+}
+
+/**
+ * ログイン時に連続日数を更新
+ * - 今日既にログイン済み → 何もしない
+ * - 昨日ログインしてた → streak + 1
+ * - 2日以上空いた → streak = 1 にリセット
+ */
+export async function updateLoginStreak(userId: string): Promise<LoginStreakData> {
+  const today = getTodayDateString()
+  const docRef = doc(db, 'userUsage', userId)
+  const docSnap = await getDoc(docRef)
+
+  // 昨日の日付を計算
+  const todayDate = new Date()
+  const jstOffset = 9 * 60
+  const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000)
+  const jstDate = new Date(utc + (jstOffset * 60000))
+  jstDate.setDate(jstDate.getDate() - 1)
+  const yesterday = jstDate.toISOString().split('T')[0]
+
+  let lastLoginDate = ''
+  let loginStreak = 1
+
+  if (docSnap.exists()) {
+    const data = docSnap.data()
+    lastLoginDate = data.lastLoginDate || ''
+    loginStreak = data.loginStreak || 1
+
+    // 今日既にログイン済み → 何もしない
+    if (lastLoginDate === today) {
+      return { lastLoginDate, loginStreak }
+    }
+
+    // 昨日ログインしてた → streak + 1
+    if (lastLoginDate === yesterday) {
+      loginStreak = loginStreak + 1
+    } else {
+      // 2日以上空いた → リセット
+      loginStreak = 1
+    }
+  }
+
+  // 更新
+  await setDoc(docRef, {
+    lastLoginDate: today,
+    loginStreak,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+
+  return { lastLoginDate: today, loginStreak }
+}
+
+/**
+ * 連続ログイン日数を取得（表示用）
+ */
+export async function getLoginStreak(userId: string): Promise<LoginStreakData> {
+  const today = getTodayDateString()
+  const docRef = doc(db, 'userUsage', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) {
+    return { lastLoginDate: '', loginStreak: 0 }
+  }
+
+  const data = docSnap.data()
+  const lastLoginDate = data.lastLoginDate || ''
+  let loginStreak = data.loginStreak || 0
+
+  // 昨日の日付を計算
+  const todayDate = new Date()
+  const jstOffset = 9 * 60
+  const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000)
+  const jstDate = new Date(utc + (jstOffset * 60000))
+  jstDate.setDate(jstDate.getDate() - 1)
+  const yesterday = jstDate.toISOString().split('T')[0]
+
+  // 今日か昨日以外の場合は0を返す（連続が途切れている）
+  if (lastLoginDate !== today && lastLoginDate !== yesterday) {
+    loginStreak = 0
+  }
+
+  return { lastLoginDate, loginStreak }
+}

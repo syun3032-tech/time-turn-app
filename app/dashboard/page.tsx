@@ -11,7 +11,7 @@ import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree,
 import { TaskNode } from "@/types/task-tree";
 import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, type UsageData } from "@/lib/firebase/firestore";
+import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, type UsageData } from "@/lib/firebase/firestore";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
@@ -175,21 +175,25 @@ export default function DashboardPage() {
     loadChatHistory();
   }, [user]);
 
-  // 利用制限状況を読み込み
+  // 利用制限状況を読み込み + ログイン連続日数を更新
   useEffect(() => {
     if (!user) return;
 
-    const loadUsage = async () => {
+    const loadUsageAndUpdateStreak = async () => {
       try {
+        // 利用制限チェック
         const { isLimitReached: limitReached, usage } = await checkUsageLimit(user.uid);
         setUsageData(usage);
         setIsLimitReached(limitReached);
+
+        // ログイン連続日数を更新
+        await updateLoginStreak(user.uid);
       } catch (error) {
-        console.error("Failed to load usage:", error);
+        console.error("Failed to load usage or update streak:", error);
       }
     };
 
-    loadUsage();
+    loadUsageAndUpdateStreak();
   }, [user]);
 
   // 表情を5秒後にノーマルに戻すヘルパー関数
@@ -827,15 +831,6 @@ export default function DashboardPage() {
         {/* チャット入力欄 */}
         <Box w="90%" maxW="340px" mb={6}>
           <VStack gap={2}>
-            {/* 利用状況表示 */}
-            {usageData && (
-              <HStack w="100%" justify="flex-end" mb={1}>
-                <Text fontSize="xs" color={isLimitReached ? "red.400" : "gray.500"}>
-                  今日の利用: {usageData.count}/{usageData.limit}回
-                  {isLimitReached && " (上限到達)"}
-                </Text>
-              </HStack>
-            )}
             <Input
               placeholder={
                 taskBreakdownStage === "output"
@@ -848,11 +843,6 @@ export default function DashboardPage() {
               }
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isLoading) {
-                  handleSendMessage();
-                }
-              }}
               bg="white"
               borderRadius="md"
               disabled={isLoading}

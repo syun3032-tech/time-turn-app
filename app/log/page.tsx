@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { FiCheckCircle, FiChevronLeft, FiChevronRight } from "react-icons/fi";
-import { getCompletedTasks } from "@/lib/firebase/firestore";
+import { getCompletedTasks, getLoginStreak } from "@/lib/firebase/firestore";
 import { getTaskTreeAsync } from "@/lib/task-tree-storage";
 import type { CompletedTask } from "@/lib/firebase/firestore-types";
 
@@ -18,57 +18,6 @@ function calculateProgress(node: any): number {
   const childProgresses = node.children.map((child: any) => calculateProgress(child));
   const totalProgress = childProgresses.reduce((sum: number, p: number) => sum + p, 0);
   return Math.round(totalProgress / node.children.length);
-}
-
-// 連続ログイン日数を計算（タスク完了日ベース）
-function calculateStreak(tasks: CompletedTask[]): number {
-  if (tasks.length === 0) return 0;
-
-  // 完了日をユニークな日付に変換してソート
-  const uniqueDates = [...new Set(
-    tasks.map(task => {
-      const date = new Date(task.completedAt);
-      return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    })
-  )].sort().reverse(); // 新しい順
-
-  if (uniqueDates.length === 0) return 0;
-
-  // 今日の日付
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
-
-  // 昨日の日付
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
-
-  // 最新の完了日が今日か昨日でなければストリークは0
-  if (uniqueDates[0] !== todayStr && uniqueDates[0] !== yesterdayStr) {
-    return 0;
-  }
-
-  // 連続日数をカウント
-  let streak = 1;
-  let currentDate = new Date(today);
-
-  // 今日に完了がない場合は昨日から開始
-  if (uniqueDates[0] !== todayStr) {
-    currentDate = yesterday;
-  }
-
-  for (let i = 1; i < 365; i++) {
-    currentDate.setDate(currentDate.getDate() - 1);
-    const checkStr = `${currentDate.getFullYear()}-${currentDate.getMonth()}-${currentDate.getDate()}`;
-
-    if (uniqueDates.includes(checkStr)) {
-      streak++;
-    } else {
-      break;
-    }
-  }
-
-  return streak;
 }
 
 // 完了日のSetを取得
@@ -262,6 +211,7 @@ export default function LogPage() {
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loginStreak, setLoginStreak] = useState(0);
 
   // カレンダーモーダル
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -294,6 +244,10 @@ export default function LogPage() {
         // タスクツリーからゴールを取得
         const tree = await getTaskTreeAsync(user.uid);
         setGoals(tree);
+
+        // ログイン連続日数を取得
+        const streakData = await getLoginStreak(user.uid);
+        setLoginStreak(streakData.loginStreak);
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
@@ -332,7 +286,6 @@ export default function LogPage() {
 
   // 統計情報
   const totalTasks = completedTasks.length;
-  const streak = calculateStreak(completedTasks);
 
   return (
     <Box px={{ base: 2, md: 4 }} py={{ base: 4, md: 6 }} bg="gray.50" minH="100vh" pb="80px">
@@ -360,7 +313,7 @@ export default function LogPage() {
               _hover={{ opacity: 0.8 }}
               transition="opacity 0.2s"
             >
-              <Text fontSize="3xl" fontWeight="bold" color="orange.500">{streak}</Text>
+              <Text fontSize="3xl" fontWeight="bold" color="orange.500">{loginStreak}</Text>
               <Text fontSize="sm" color="gray.600">連続日数 🔥</Text>
             </VStack>
           </HStack>
