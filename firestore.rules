@@ -59,5 +59,27 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+
+    // 会話履歴: userIdフィールドが自分のものだけ読み書き可能
+    match /conversations/{conversationId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      // 会話メッセージ（サブコレクション）
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+      }
+    }
+
+    // 利用状況: 自分の利用状況のみ読み書き可能
+    match /userUsage/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ログイン連続日数: 自分のデータのみ読み書き可能
+    match /loginStreaks/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
