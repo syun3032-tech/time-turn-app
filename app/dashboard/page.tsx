@@ -91,6 +91,11 @@ export default function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
+  // タスクツリー追加確認モーダル関連
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [pendingTaskNodes, setPendingTaskNodes] = useState<TaskNode[]>([]);
+  const [confirmSummary, setConfirmSummary] = useState("");
+
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
     (Object.values(hearingProgress).filter(Boolean).length / 4) * 100
@@ -435,19 +440,23 @@ export default function DashboardPage() {
       return `・${node.title} (${countChildren(node) + 1}項目)`;
     }).join("\n");
 
-    const confirmAdd = confirm(
-      `以下のタスクツリーを追加しますか？\n\n${summary}\n\n「OK」= 追加する`
-    );
+    // 確認モーダルを表示
+    setPendingTaskNodes(parsedNodes);
+    setConfirmSummary(summary);
+    setIsConfirmModalOpen(true);
+  };
 
-    if (!confirmAdd) return;
+  // タスクツリー追加を実行
+  const handleConfirmAddTasks = async () => {
+    if (pendingTaskNodes.length === 0) return;
 
-    // タスクツリーに追加（parsedNodesをそのまま追加）
-    const updatedTree = [...taskTree, ...parsedNodes];
+    // タスクツリーに追加
+    const updatedTree = [...taskTree, ...pendingTaskNodes];
     setTaskTree(updatedTree);
     await saveTaskTreeAsync(updatedTree, user?.uid);
 
     // 成功メッセージ
-    const totalItems = parsedNodes.reduce((sum, node) => {
+    const totalItems = pendingTaskNodes.reduce((sum, node) => {
       const countAll = (n: TaskNode): number => {
         if (!n.children) return 1;
         return 1 + n.children.reduce((s, c) => s + countAll(c), 0);
@@ -457,10 +466,11 @@ export default function DashboardPage() {
 
     setCharacterMessage(`${totalItems}個のタスクをツリーに追加しました！🎉`);
     setExpressionWithAutoReset("wawa");
+    setIsConfirmModalOpen(false);
 
     // タスクページに遷移
     setTimeout(() => {
-      window.location.href = `/tasks?highlight=${parsedNodes[0]?.id}`;
+      window.location.href = `/tasks?highlight=${pendingTaskNodes[0]?.id}`;
     }, 1500);
   };
 
@@ -1137,6 +1147,45 @@ export default function DashboardPage() {
               <Button onClick={() => setIsHistoryModalOpen(false)}>
                 閉じる
               </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
+      {/* タスクツリー追加確認モーダル */}
+      <Dialog.Root open={isConfirmModalOpen} onOpenChange={(e) => setIsConfirmModalOpen(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
+          <Dialog.Content maxW="400px" mx={4}>
+            <Dialog.Header>
+              <Dialog.Title color="gray.800">タスクツリーに追加</Dialog.Title>
+              <Dialog.CloseTrigger />
+            </Dialog.Header>
+            <Dialog.Body>
+              <Text color="gray.700" mb={3}>以下のタスクツリーを追加しますか？</Text>
+              <Box bg="gray.50" p={3} borderRadius="md" maxH="200px" overflowY="auto">
+                <Text fontSize="sm" whiteSpace="pre-wrap" color="gray.800">
+                  {confirmSummary}
+                </Text>
+              </Box>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <HStack gap={2} w="100%">
+                <Button
+                  flex={1}
+                  variant="outline"
+                  onClick={() => setIsConfirmModalOpen(false)}
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  flex={1}
+                  colorScheme="teal"
+                  onClick={handleConfirmAddTasks}
+                >
+                  追加する
+                </Button>
+              </HStack>
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>
