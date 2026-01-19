@@ -1014,27 +1014,6 @@ export default function DashboardPage() {
           </VStack>
         </Box>
 
-        {/* タスクツリー自動反映ボタン（AIメッセージにタスク構造がある時のみ表示） */}
-        {!isLoading && hasTaskTreeStructure(characterMessage) && (
-          <Button
-            colorScheme="purple"
-            size="md"
-            onClick={async () => {
-              const parsedNodes = parseTaskTreeFromMessage(characterMessage);
-              if (parsedNodes.length > 0) {
-                const updatedTree = [...taskTree, ...parsedNodes];
-                setTaskTree(updatedTree);
-                await saveTaskTreeAsync(updatedTree, user?.uid);
-                setCharacterMessage("タスクツリーに反映しました！タスクページで確認してください。");
-                setExpressionWithAutoReset("wawa");
-              }
-            }}
-            mb={2}
-          >
-            🎯 タスクツリーに反映する
-          </Button>
-        )}
-
         {/* 会話履歴ボタン（会話がある時のみ表示） */}
         {messages.length > 0 && (
           <Button
