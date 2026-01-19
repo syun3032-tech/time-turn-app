@@ -101,11 +101,12 @@ export function ConversationSidebar({
         {/* ヘッダー */}
         <Box p={4} borderBottom="1px solid" borderColor="gray.200">
           <HStack justify="space-between" mb={3}>
-            <Text fontWeight="bold" fontSize="lg">会話履歴</Text>
+            <Text fontWeight="bold" fontSize="lg" color="gray.800">会話履歴</Text>
             <IconButton
               aria-label="閉じる"
               size="sm"
               variant="ghost"
+              color="gray.700"
               onClick={onClose}
             >
               <FiX />
@@ -182,11 +183,12 @@ export function ConversationSidebar({
                         <Text
                           fontSize="sm"
                           fontWeight={currentConversationId === conv.id ? "bold" : "normal"}
+                          color="gray.800"
                           lineClamp={1}
                         >
                           {conv.title}
                         </Text>
-                        <Text fontSize="xs" color="gray.500">
+                        <Text fontSize="xs" color="gray.600">
                           {formatDate(conv.updatedAt)}
                         </Text>
                       </VStack>
@@ -195,6 +197,7 @@ export function ConversationSidebar({
                           aria-label="編集"
                           size="xs"
                           variant="ghost"
+                          color="gray.600"
                           onClick={() => handleStartEdit(conv)}
                         >
                           <FiEdit2 />

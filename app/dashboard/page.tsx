@@ -877,7 +877,9 @@ export default function DashboardPage() {
             onClick={() => setIsSidebarOpen(true)}
             _hover={{ opacity: 0.7 }}
           >
-            <FiMenu size={20} />
+            <Box color="gray.700">
+              <FiMenu size={20} />
+            </Box>
             <Text fontWeight="bold" fontSize="lg" color="gray.800">
               TimeTurn
             </Text>
@@ -886,6 +888,7 @@ export default function DashboardPage() {
             size="xs"
             colorScheme="gray"
             variant="ghost"
+            color="gray.700"
             onClick={() => setShowSettings(true)}
           >
             <HStack gap={1}>
