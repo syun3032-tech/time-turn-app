@@ -340,3 +340,97 @@ export async function saveTaskTreeToFirestore(userId: string, tree: any[]): Prom
     updatedAt: serverTimestamp()
   }, { merge: true })
 }
+
+/**
+ * Usage Tracking（API利用制限）
+ * @see lib/usage-config.ts
+ * @see docs/USAGE_LIMIT.md
+ */
+import { getTodayDateString, USAGE_LIMITS } from '../usage-config'
+
+export interface UsageData {
+  date: string
+  count: number
+  limit: number
+  updatedAt?: Date
+}
+
+/**
+ * ユーザーの今日の利用状況を取得
+ */
+export async function getUserUsage(userId: string): Promise<UsageData> {
+  const today = getTodayDateString()
+  const docRef = doc(db, 'userUsage', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) {
+    return {
+      date: today,
+      count: 0,
+      limit: USAGE_LIMITS.DAILY_MESSAGE_LIMIT,
+    }
+  }
+
+  const data = docSnap.data()
+
+  // 日付が変わっていたらリセット
+  if (data.date !== today) {
+    return {
+      date: today,
+      count: 0,
+      limit: USAGE_LIMITS.DAILY_MESSAGE_LIMIT,
+    }
+  }
+
+  return {
+    date: data.date,
+    count: data.count || 0,
+    limit: USAGE_LIMITS.DAILY_MESSAGE_LIMIT,
+    updatedAt: toDate(data.updatedAt),
+  }
+}
+
+/**
+ * 利用回数をインクリメント
+ */
+export async function incrementUsage(userId: string): Promise<UsageData> {
+  const today = getTodayDateString()
+  const docRef = doc(db, 'userUsage', userId)
+  const docSnap = await getDoc(docRef)
+
+  let newCount = 1
+
+  if (docSnap.exists()) {
+    const data = docSnap.data()
+    // 日付が同じなら加算、違うならリセット
+    if (data.date === today) {
+      newCount = (data.count || 0) + 1
+    }
+  }
+
+  await setDoc(docRef, {
+    date: today,
+    count: newCount,
+    updatedAt: serverTimestamp(),
+  })
+
+  return {
+    date: today,
+    count: newCount,
+    limit: USAGE_LIMITS.DAILY_MESSAGE_LIMIT,
+  }
+}
+
+/**
+ * 利用制限に達しているかチェック
+ */
+export async function checkUsageLimit(userId: string): Promise<{
+  isLimitReached: boolean
+  usage: UsageData
+}> {
+  const usage = await getUserUsage(userId)
+  return {
+    isLimitReached: usage.count >= USAGE_LIMITS.DAILY_MESSAGE_LIMIT,
+    usage,
+  }
+}

@@ -11,7 +11,8 @@ import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree,
 import { TaskNode } from "@/types/task-tree";
 import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile } from "@/lib/firebase/firestore";
+import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, type UsageData } from "@/lib/firebase/firestore";
+import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
 import { ProfileSetupModal } from "@/components/ProfileSetupModal";
@@ -79,6 +80,10 @@ export default function DashboardPage() {
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
+
+  // 利用制限関連
+  const [usageData, setUsageData] = useState<UsageData | null>(null);
+  const [isLimitReached, setIsLimitReached] = useState(false);
 
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
@@ -168,6 +173,23 @@ export default function DashboardPage() {
     };
 
     loadChatHistory();
+  }, [user]);
+
+  // 利用制限状況を読み込み
+  useEffect(() => {
+    if (!user) return;
+
+    const loadUsage = async () => {
+      try {
+        const { isLimitReached: limitReached, usage } = await checkUsageLimit(user.uid);
+        setUsageData(usage);
+        setIsLimitReached(limitReached);
+      } catch (error) {
+        console.error("Failed to load usage:", error);
+      }
+    };
+
+    loadUsage();
   }, [user]);
 
   // 表情を5秒後にノーマルに戻すヘルパー関数
@@ -416,6 +438,18 @@ export default function DashboardPage() {
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading || !user) return;
 
+    // === 利用制限チェック ===
+    if (isLimitReached) {
+      const limitMessage: Message = {
+        role: "assistant",
+        content: getLimitReachedMessage()
+      };
+      setMessages([...messages, { role: "user", content: message }, limitMessage]);
+      setCharacterMessage(getLimitReachedMessage());
+      setMessage("");
+      return;
+    }
+
     const userMessage: Message = { role: "user", content: message };
     const newMessages = [...messages, userMessage];
 
@@ -551,6 +585,17 @@ export default function DashboardPage() {
           await saveChatMessage(user.uid, 'assistant', response.content);
         } catch (error) {
           console.error("Failed to save assistant message:", error);
+        }
+
+        // 利用回数をインクリメント
+        try {
+          const newUsage = await incrementUsage(user.uid);
+          setUsageData(newUsage);
+          if (newUsage.count >= USAGE_LIMITS.DAILY_MESSAGE_LIMIT) {
+            setIsLimitReached(true);
+          }
+        } catch (error) {
+          console.error("Failed to increment usage:", error);
         }
 
         // 返答内容に応じて表情を変更（5秒後にnormalに戻る）
@@ -782,6 +827,15 @@ export default function DashboardPage() {
         {/* チャット入力欄 */}
         <Box w="90%" maxW="340px" mb={6}>
           <VStack gap={2}>
+            {/* 利用状況表示 */}
+            {usageData && (
+              <HStack w="100%" justify="flex-end" mb={1}>
+                <Text fontSize="xs" color={isLimitReached ? "red.400" : "gray.500"}>
+                  今日の利用: {usageData.count}/{usageData.limit}回
+                  {isLimitReached && " (上限到達)"}
+                </Text>
+              </HStack>
+            )}
             <Input
               placeholder={
                 taskBreakdownStage === "output"
