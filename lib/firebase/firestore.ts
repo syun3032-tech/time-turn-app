@@ -26,7 +26,9 @@ import type {
   UserProfile,
   CompletedTask,
   Conversation,
-  ConversationMessage
+  ConversationMessage,
+  HearingProgress,
+  HearingSummary
 } from './firestore-types'
 
 // Timestamp変換ヘルパー
@@ -554,18 +556,21 @@ export async function createConversation(
  * ユーザーの会話一覧を取得
  */
 export async function getConversations(userId: string): Promise<Conversation[]> {
+  // インデックス不要：クライアント側でソート
   const q = query(
     collection(db, 'conversations'),
-    where('userId', '==', userId),
-    orderBy('updatedAt', 'desc')
+    where('userId', '==', userId)
   )
   const snapshot = await getDocs(q)
-  return snapshot.docs.map(doc => ({
+  const conversations = snapshot.docs.map(doc => ({
     id: doc.id,
     ...doc.data(),
     createdAt: toDate(doc.data().createdAt),
     updatedAt: toDate(doc.data().updatedAt),
   } as Conversation))
+
+  // updatedAtで降順ソート
+  return conversations.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
 }
 
 /**
@@ -580,6 +585,24 @@ export async function updateConversationTitle(
   await updateDoc(docRef, {
     title,
     isCustomTitle,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/**
+ * 会話のヒアリング状態を更新
+ */
+export async function updateConversationHearingState(
+  conversationId: string,
+  state: {
+    taskBreakdownStage?: 'normal' | 'hearing' | 'proposal' | 'output'
+    hearingProgress?: HearingProgress
+    hearingSummary?: HearingSummary
+  }
+): Promise<void> {
+  const docRef = doc(db, 'conversations', conversationId)
+  await updateDoc(docRef, {
+    ...state,
     updatedAt: serverTimestamp(),
   })
 }

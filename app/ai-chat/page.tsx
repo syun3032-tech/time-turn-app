@@ -184,7 +184,7 @@ export default function AIChatPage() {
         {messages.length === 0 && (
           <>
             <CharacterMessage
-              message="こんにちは！秘書ゆりです。何でも聞いてくださいね。"
+              message="こんにちは！秘書ちゃんです。何でも聞いてくださいね。"
               expression="wawa"
               avatarSize="large"
             />

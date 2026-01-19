@@ -43,7 +43,7 @@ export function CharacterAvatar({
     >
       <Image
         src={EXPRESSION_IMAGES[expression]}
-        alt="秘書ゆり"
+        alt="秘書ちゃん"
         objectFit="cover"
         w="100%"
         h="100%"

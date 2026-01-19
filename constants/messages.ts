@@ -1,6 +1,6 @@
 /**
  * 定型メッセージ・セリフ集
- * 秘書ゆりが使用する定型メッセージやセリフのバリエーション
+ * 秘書ちゃんが使用する定型メッセージやセリフのバリエーション
  */
 
 import { Expression } from "@/components/CharacterAvatar";
@@ -15,7 +15,7 @@ export interface MessageWithExpression {
  */
 export const GREETING_MESSAGES = {
   first_meeting: {
-    text: "はじめまして！秘書ゆりです。あなたの目標達成を全力でサポートさせていただきますね。一緒に頑張りましょう！",
+    text: "はじめまして！秘書ちゃんです。あなたの目標達成を全力でサポートさせていただきますね。一緒に頑張りましょう！",
     expression: "wawa" as Expression,
   },
   returning: {

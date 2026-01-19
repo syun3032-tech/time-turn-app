@@ -11,7 +11,7 @@ import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree,
 import { TaskNode } from "@/types/task-tree";
 import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, clearChatHistory, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, deleteConversation, type UsageData } from "@/lib/firebase/firestore";
+import { getChatMessages, saveChatMessage, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, type UsageData } from "@/lib/firebase/firestore";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
@@ -218,6 +218,32 @@ export default function DashboardPage() {
     loadConversations();
   }, [user]);
 
+  // ヒアリング状態をFirestoreに保存
+  useEffect(() => {
+    if (!currentConversationId) return;
+
+    const saveHearingState = async () => {
+      try {
+        await updateConversationHearingState(currentConversationId, {
+          taskBreakdownStage,
+          hearingProgress,
+          hearingSummary,
+        });
+        // 会話一覧も更新（状態が反映されるように）
+        if (user) {
+          const convs = await getConversations(user.uid);
+          setConversations(convs);
+        }
+      } catch (error) {
+        console.error("Failed to save hearing state:", error);
+      }
+    };
+
+    // デバウンス: 状態変更から500ms後に保存
+    const timer = setTimeout(saveHearingState, 500);
+    return () => clearTimeout(timer);
+  }, [currentConversationId, taskBreakdownStage, hearingProgress, hearingSummary, user]);
+
   // 表情を5秒後にノーマルに戻すヘルパー関数
   const setExpressionWithAutoReset = (expression: Expression) => {
     // 既存のタイマーをクリア
@@ -292,8 +318,30 @@ export default function DashboardPage() {
         setCharacterMessage("今日はどのタスクから行く？");
       }
 
-      // ステージをリセット
-      setTaskBreakdownStage("normal");
+      // 会話からヒアリング状態を復元
+      const selectedConv = conversations.find(c => c.id === conversationId);
+      if (selectedConv) {
+        // ステージを復元（保存されていなければnormal）
+        setTaskBreakdownStage(selectedConv.taskBreakdownStage || "normal");
+
+        // ヒアリング進捗を復元
+        if (selectedConv.hearingProgress) {
+          setHearingProgress(selectedConv.hearingProgress);
+        } else {
+          setHearingProgress({ why: false, current: false, target: false, timeline: false });
+        }
+
+        // ヒアリング要約を復元
+        if (selectedConv.hearingSummary) {
+          setHearingSummary(selectedConv.hearingSummary);
+        } else {
+          setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+        }
+      } else {
+        setTaskBreakdownStage("normal");
+        setHearingProgress({ why: false, current: false, target: false, timeline: false });
+        setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+      }
     } catch (error) {
       console.error("Failed to load conversation:", error);
     }
@@ -729,14 +777,27 @@ export default function DashboardPage() {
       const response = await chatWithAISeamless(contextToSend, provider);
 
       if (response.success && response.content) {
-        const assistantMessage: Message = { role: "assistant", content: response.content };
+        let finalContent = response.content;
+
+        // 通常モードで250文字超えたら要約を依頼
+        if (taskBreakdownStage === "normal" && response.content.length > 250) {
+          console.log(`Response too long (${response.content.length} chars), requesting summary...`);
+          const summaryResponse = await chatWithAISeamless([
+            { role: "user", content: `以下の文章を100文字以内で要約して、敬語で1〜2文にまとめて：\n\n${response.content}` }
+          ], provider);
+          if (summaryResponse.success && summaryResponse.content) {
+            finalContent = summaryResponse.content;
+          }
+        }
+
+        const assistantMessage: Message = { role: "assistant", content: finalContent };
         setMessages([...newMessages, assistantMessage]);
-        setCharacterMessage(response.content);
+        setCharacterMessage(finalContent);
 
         // Firestoreにアシスタントメッセージを保存
         try {
           if (convId) {
-            await addMessageToConversation(convId, 'assistant', response.content);
+            await addMessageToConversation(convId, 'assistant', finalContent);
           }
         } catch (error) {
           console.error("Failed to save assistant message:", error);
@@ -768,9 +829,9 @@ export default function DashboardPage() {
           errorMsg.includes("resource");
 
         if (isRateLimitError) {
-          setCharacterMessage("現在βテスト版のため、APIの利用上限に達しました。しばらく時間を空けてから操作してください。");
+          setCharacterMessage("現在βテスト版のため、しばらく時間を空けてから操作してください。");
         } else {
-          setCharacterMessage(`エラーが発生しました: ${response.error || "Unknown error"}`);
+          setCharacterMessage("ごめんね、エラーが起きちゃった...");
         }
         setCharacterExpression("normal");
       }
@@ -786,7 +847,7 @@ export default function DashboardPage() {
         errorStr.includes("resource");
 
       if (isRateLimitError) {
-        setCharacterMessage("現在βテスト版のため、APIの利用上限に達しました。しばらく時間を空けてから操作してください。");
+        setCharacterMessage("現在βテスト版のため、しばらく時間を空けてから操作してください。");
       } else {
         setCharacterMessage("ごめんね、エラーが起きちゃった...");
       }
@@ -1021,58 +1082,15 @@ export default function DashboardPage() {
               fontSize="md"
               _placeholder={{ color: "gray.400" }}
             />
-            <HStack w="100%" gap={2}>
-              <Button
-                colorScheme="teal"
-                flex={1}
-                onClick={handleSendMessage}
-                loading={isLoading}
-                disabled={!message.trim() || isLoading}
-              >
-                {isLoading ? "送信中..." : "送信"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  const defaultMessage = "今日はどのタスクから行く？";
-                  setCharacterMessage(defaultMessage);
-                  setCharacterExpression("normal");
-                  setMessages([]);
-                  setTaskBreakdownStage("normal");
-                  setGoalContext("");
-                  setMessage("");
-                  // ヒアリング進捗もリセット
-                  setHearingProgress({
-                    why: false,
-                    current: false,
-                    target: false,
-                    timeline: false,
-                  });
-                  setHearingSummary({
-                    goal: "",
-                    why: "",
-                    current: "",
-                    target: "",
-                    timeline: "",
-                  });
-                  // 会話履歴をクリア（Firestore）
-                  if (user) {
-                    try {
-                      await clearChatHistory(user.uid);
-                      console.log("会話履歴をFirestoreから削除しました");
-                    } catch (error) {
-                      console.error("Failed to clear chat history:", error);
-                    }
-                  }
-                  // タイマーもクリア
-                  if (expressionTimerRef.current) {
-                    clearTimeout(expressionTimerRef.current);
-                  }
-                }}
-              >
-                リセット
-              </Button>
-            </HStack>
+            <Button
+              colorScheme="teal"
+              w="100%"
+              onClick={handleSendMessage}
+              loading={isLoading}
+              disabled={!message.trim() || isLoading}
+            >
+              {isLoading ? "送信中..." : "送信"}
+            </Button>
 
             {/* タスク反映ボタン（output段階で会話がある時） */}
             {taskBreakdownStage === "output" && messages.length >= 4 && (
@@ -1117,7 +1135,7 @@ export default function DashboardPage() {
                         <Card.Root bg="gray.50">
                           <Card.Body>
                             <HStack mb={1}>
-                              <Badge colorScheme="purple" size="sm">ゆり</Badge>
+                              <Badge colorScheme="purple" size="sm">秘書ちゃん</Badge>
                               <Text fontSize="xs" color="gray.600">
                                 {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
                               </Text>

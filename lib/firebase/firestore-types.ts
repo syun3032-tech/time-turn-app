@@ -129,6 +129,27 @@ export interface CompletedTask {
 }
 
 /**
+ * ヒアリング進捗
+ */
+export interface HearingProgress {
+  why: boolean
+  current: boolean
+  target: boolean
+  timeline: boolean
+}
+
+/**
+ * ヒアリング要約
+ */
+export interface HearingSummary {
+  goal: string
+  why: string
+  current: string
+  target: string
+  timeline: string
+}
+
+/**
  * 会話履歴
  */
 export interface Conversation {
@@ -137,6 +158,10 @@ export interface Conversation {
   title: string
   isCustomTitle: boolean  // ユーザーが編集したらtrue
   goalId?: string         // 紐づく目標（あれば）
+  // ヒアリング状態の永続化
+  taskBreakdownStage?: 'normal' | 'hearing' | 'proposal' | 'output'
+  hearingProgress?: HearingProgress
+  hearingSummary?: HearingSummary
   createdAt: Date
   updatedAt: Date
 }
