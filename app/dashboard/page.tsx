@@ -915,7 +915,7 @@ export default function DashboardPage() {
         {taskBreakdownStage === "hearing" && (
           <Box w="90%" maxW="340px" mb={4}>
             <Box
-              bg="purple.500"
+              bg="teal.500"
               px={4}
               py={2}
               borderRadius="lg"
@@ -933,7 +933,7 @@ export default function DashboardPage() {
                   px={2}
                   py={1}
                   borderRadius="md"
-                  bg={hearingProgress[item.key as keyof HearingProgress] ? "green.500" : "gray.200"}
+                  bg={hearingProgress[item.key as keyof HearingProgress] ? "teal.600" : "gray.200"}
                   color={hearingProgress[item.key as keyof HearingProgress] ? "white" : "gray.500"}
                   fontSize="2xs"
                   fontWeight="semibold"
@@ -946,7 +946,7 @@ export default function DashboardPage() {
         )}
         {taskBreakdownStage === "proposal" && (
           <Box
-            bg="blue.500"
+            bg="teal.500"
             px={4}
             py={2}
             borderRadius="full"
@@ -960,7 +960,7 @@ export default function DashboardPage() {
         )}
         {taskBreakdownStage === "output" && (
           <Box
-            bg="green.500"
+            bg="teal.500"
             px={4}
             py={2}
             borderRadius="full"
