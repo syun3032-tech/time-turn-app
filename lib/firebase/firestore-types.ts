@@ -2,6 +2,14 @@
  * Firestoreデータ構造の型定義
  */
 
+export interface NotificationSettings {
+  taskReminders: boolean           // タスクリマインダー通知
+  characterCalls: boolean          // キャラクター呼びかけ通知
+  reminderFrequency: 'hourly' | 'daily' | 'custom'  // リマインド頻度
+  quietHoursStart?: string         // 通知しない時間帯（開始）例: "22:00"
+  quietHoursEnd?: string           // 通知しない時間帯（終了）例: "08:00"
+}
+
 export interface UserProfile {
   uid: string
   email: string
@@ -14,6 +22,8 @@ export interface UserProfile {
   preferences?: Record<string, any>
   analysisResult?: Record<string, any>
   profileCompleted: boolean
+  fcmTokens?: string[]             // FCMトークン（複数デバイス対応）
+  notificationSettings?: NotificationSettings  // 通知設定
   createdAt: Date
   updatedAt: Date
 }

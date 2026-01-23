@@ -66,4 +66,12 @@ export function getDb(): Firestore {
 
 export const auth = typeof window !== 'undefined' ? getAuth() : undefined as any;
 export const db = typeof window !== 'undefined' ? getDb() : undefined as any;
+
+export function getApp(): FirebaseApp | undefined {
+  if (!app) {
+    initializeFirebase();
+  }
+  return app;
+}
+
 export default app;

@@ -18,6 +18,8 @@ import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-
 import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
+import { InstallPrompt } from "@/components/InstallPrompt";
+import { NotificationPermission } from "@/components/NotificationPermission";
 import { FiSettings, FiMenu } from "react-icons/fi";
 import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
 
@@ -1205,6 +1207,12 @@ export default function DashboardPage() {
         onSave={handleSettingsSave}
         onLogout={handleLogout}
       />
+
+      {/* PWAインストールプロンプト */}
+      <InstallPrompt />
+
+      {/* 通知許可プロンプト */}
+      <NotificationPermission />
     </Box>
   );
 }

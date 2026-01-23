@@ -480,7 +480,8 @@ function TasksPageContent() {
   const searchParams = useSearchParams();
   const highlightId = searchParams.get("highlight");
 
-  const [tree, setTree] = useState<TaskNode[]>(initialTreeBackup as TaskNode[]);
+  const [tree, setTree] = useState<TaskNode[]>([]);
+  const [isTreeLoading, setIsTreeLoading] = useState(true);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
 
@@ -510,11 +511,18 @@ function TasksPageContent() {
 
   // タスクツリーを読み込み
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setTree([]);
+      setIsTreeLoading(false);
+      return;
+    }
 
     const loadTree = async () => {
+      setIsTreeLoading(true);
+      setTree([]); // ユーザー切り替え時に前のデータをクリア
       const loadedTree = await getTaskTreeAsync(user.uid);
       setTree(loadedTree);
+      setIsTreeLoading(false);
     };
 
     loadTree();
@@ -839,34 +847,40 @@ function TasksPageContent() {
       </Flex>
 
       <VStack align="stretch" gap={2}>
-        {tree.map((node) => (
-          <TreeNode
-            key={node.id}
-            node={node}
-            expandedNodes={expandedNodes}
-            onToggle={handleToggle}
-            onAddChild={handleAddChild}
-            onOpenPeriodModal={handleOpenPeriodModal}
-            onCompleteTask={handleCompleteTask}
-            onDelete={handleDelete}
-            onUpdateMemo={handleUpdateMemo}
-            onRestoreTask={handleRestoreTask}
-            highlightedId={highlightId}
-            showArchived={showArchived}
-          />
-        ))}
+        {isTreeLoading ? (
+          <Text color="gray.500" textAlign="center" py={8}>読み込み中...</Text>
+        ) : (
+          <>
+            {tree.map((node) => (
+              <TreeNode
+                key={node.id}
+                node={node}
+                expandedNodes={expandedNodes}
+                onToggle={handleToggle}
+                onAddChild={handleAddChild}
+                onOpenPeriodModal={handleOpenPeriodModal}
+                onCompleteTask={handleCompleteTask}
+                onDelete={handleDelete}
+                onUpdateMemo={handleUpdateMemo}
+                onRestoreTask={handleRestoreTask}
+                highlightedId={highlightId}
+                showArchived={showArchived}
+              />
+            ))}
 
-        {/* Add Goal button - only show when nothing is expanded */}
-        {expandedNodes.size === 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            colorScheme="teal"
-            w="full"
-            onClick={handleAddGoal}
-          >
-            + Goalを追加
-          </Button>
+            {/* Add Goal button - only show when nothing is expanded */}
+            {expandedNodes.size === 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                colorScheme="teal"
+                w="full"
+                onClick={handleAddGoal}
+              >
+                + Goalを追加
+              </Button>
+            )}
+          </>
         )}
       </VStack>
 
