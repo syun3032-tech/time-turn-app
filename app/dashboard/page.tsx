@@ -1408,38 +1408,34 @@ export default function DashboardPage() {
 
       {/* メインコンテンツ - PC版（キャラクター背面レイアウト） */}
       <Box
-        display={{ base: "none", md: "block" }}
-        position="relative"
-        h="calc(100vh - 140px)"
-        overflow="hidden"
+        display={{ base: "none", md: "flex" }}
+        flexDirection="row"
+        alignItems="flex-end"
+        minH="calc(100vh - 64px - 64px)"
+        px={8}
+        py={4}
       >
-        {/* 背面: キャラクター */}
+        {/* 左側: キャラクター */}
         <Box
-          position="absolute"
-          left="5%"
-          bottom="0"
-          zIndex={1}
-          pointerEvents="none"
+          flexShrink={0}
+          mr={8}
         >
           <CharacterAvatar
             expression={characterExpression}
-            width="420px"
-            height="630px"
+            width="350px"
+            height="525px"
             variant="bare"
           />
         </Box>
 
-        {/* 前面: 吹き出し + 入力欄 */}
+        {/* 右側: 吹き出し + 入力欄 */}
         <Box
-          position="relative"
-          zIndex={10}
+          flex={1}
           display="flex"
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
-          h="100%"
-          px={8}
-          ml="350px"
+          py={8}
         >
           <VStack gap={6} maxW="600px" w="100%">
           {/* ヒアリング進捗インジケーター - PC版 */}
