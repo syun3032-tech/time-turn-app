@@ -12,6 +12,7 @@ import {
 import { FiPlus, FiEdit2, FiCheck, FiX, FiTrash2 } from "react-icons/fi";
 import { useState } from "react";
 import type { Conversation } from "@/lib/firebase/firestore-types";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface ConversationSidebarProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const handleStartEdit = (conv: Conversation) => {
     setEditingId(conv.id);
@@ -207,11 +209,7 @@ export function ConversationSidebar({
                           size="xs"
                           variant="ghost"
                           color="red.500"
-                          onClick={() => {
-                            if (confirm("この会話を削除しますか？")) {
-                              onDeleteConversation(conv.id);
-                            }
-                          }}
+                          onClick={() => setDeleteTargetId(conv.id)}
                         >
                           <FiTrash2 />
                         </IconButton>
@@ -224,6 +222,22 @@ export function ConversationSidebar({
           </VStack>
         </Box>
       </Box>
+
+      {/* 削除確認モーダル */}
+      <ConfirmModal
+        isOpen={deleteTargetId !== null}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => {
+          if (deleteTargetId) {
+            onDeleteConversation(deleteTargetId);
+          }
+        }}
+        title="会話を削除"
+        message="この会話を削除しますか？削除すると元に戻せません。"
+        confirmText="削除する"
+        cancelText="キャンセル"
+        confirmColorScheme="red"
+      />
     </>
   );
 }

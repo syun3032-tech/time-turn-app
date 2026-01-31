@@ -3,6 +3,7 @@
 import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input, Textarea } from "@chakra-ui/react";
 import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
+import { MiniCharacter } from "@/components/MiniCharacter";
 import { useState, useRef, useEffect, Suspense } from "react";
 import { FiCalendar } from "react-icons/fi";
 import DatePicker from "react-datepicker";
@@ -12,6 +13,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveCompletedTask, deleteCompletedTaskByTaskId } from "@/lib/firebase/firestore";
 import { TaskNode } from "@/types/task-tree";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 const initialTreeBackup = [
   {
@@ -177,6 +179,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   const nodeRef = useRef<HTMLDivElement>(null);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
   const [memoText, setMemoText] = useState(node.memo || "");
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Tempo風: 子要素があるかどうかで表示を切り替え
   const showProgressBar = hasChildren; // 子があれば進捗バー
@@ -267,9 +270,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                     colorScheme="gray"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`「${node.title}」を削除しますか？`)) {
-                        onDelete(node.id);
-                      }
+                      setIsDeleteConfirmOpen(true);
                     }}
                   >
                     削除
@@ -342,32 +343,48 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 </HStack>
               )}
 
-              {/* メモエリア（横展開） */}
-              <HStack w="full" gap={2} align="flex-start" flexWrap="wrap">
-                {/* メモボタンと入力欄 */}
-                <HStack flex={1} gap={2} align="center" minW="200px">
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    colorScheme="gray"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsMemoOpen(!isMemoOpen);
-                    }}
-                  >
-                    <Text>メモ {isMemoOpen ? "▲" : "▼"}</Text>
-                  </Button>
-
-                  {/* メモ入力欄（横展開） */}
-                  {isMemoOpen && (
-                    <HStack flex={1} gap={1}>
-                      <Input
-                        placeholder="メモを入力..."
-                        value={memoText}
-                        onChange={(e) => setMemoText(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
+              {/* メモエリア（角丸四角、常に1行表示、タップで展開） */}
+              <Box
+                w="full"
+                bg="gray.100"
+                borderRadius="lg"
+                px={3}
+                py={2}
+                cursor="pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMemoOpen(!isMemoOpen);
+                }}
+                _hover={{ bg: "gray.200" }}
+                transition="background 0.2s"
+              >
+                {isMemoOpen ? (
+                  // 展開時: 編集可能
+                  <VStack align="stretch" gap={2} onClick={(e) => e.stopPropagation()}>
+                    <Textarea
+                      placeholder="メモを入力..."
+                      value={memoText}
+                      onChange={(e) => setMemoText(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      size="sm"
+                      bg="white"
+                      color="gray.800"
+                      _placeholder={{ color: "gray.500" }}
+                      rows={3}
+                      resize="vertical"
+                    />
+                    <HStack justify="flex-end" gap={2}>
+                      <Button
                         size="xs"
-                      />
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMemoText(node.memo || "");
+                          setIsMemoOpen(false);
+                        }}
+                      >
+                        キャンセル
+                      </Button>
                       <Button
                         size="xs"
                         colorScheme="teal"
@@ -380,32 +397,35 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                         保存
                       </Button>
                     </HStack>
-                  )}
+                  </VStack>
+                ) : (
+                  // 閉じている時: 1行目のみ表示（複数行なら...で省略）
+                  <Text
+                    fontSize="xs"
+                    color={node.memo ? "gray.700" : "gray.400"}
+                  >
+                    {node.memo
+                      ? node.memo.split('\n')[0] + (node.memo.includes('\n') ? '...' : '')
+                      : "タップしてメモを追加..."}
+                  </Text>
+                )}
+              </Box>
 
-                  {/* メモ表示（閉じている時） */}
-                  {!isMemoOpen && node.memo && (
-                    <Text fontSize="xs" color="gray.700" flex={1}>
-                      {node.memo}
-                    </Text>
-                  )}
+              {/* 期限ボタン */}
+              <Button
+                size="xs"
+                variant="ghost"
+                colorScheme="teal"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenPeriodModal(node);
+                }}
+              >
+                <HStack gap={1}>
+                  <FiCalendar />
+                  <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
                 </HStack>
-
-                {/* 期限ボタン（右寄せ） */}
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  colorScheme="teal"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenPeriodModal(node);
-                  }}
-                >
-                  <HStack gap={1}>
-                    <FiCalendar />
-                    <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
-                  </HStack>
-                </Button>
-              </HStack>
+              </Button>
 
               {isTask && node.ai && !isArchived && (
                 <Link href="/tasks/sample-task-id/run">
@@ -470,6 +490,18 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
           )}
         </Box>
       )}
+
+      {/* 削除確認モーダル */}
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={() => onDelete(node.id)}
+        title="タスクを削除"
+        message={`「${node.title}」を削除しますか？この操作は取り消せません。`}
+        confirmText="削除する"
+        cancelText="キャンセル"
+        confirmColorScheme="red"
+      />
     </Box>
   );
 }
@@ -501,6 +533,8 @@ function TasksPageContent() {
   const [addChildType, setAddChildType] = useState<string>("");
   const [newChildTitle, setNewChildTitle] = useState("");
 
+  // ミニキャラチャット用state
+  const [isMiniChatOpen, setIsMiniChatOpen] = useState(false);
 
   // 認証チェック
   useEffect(() => {
@@ -508,6 +542,10 @@ function TasksPageContent() {
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  // タスクツリー保存用のRef
+  const saveTreeRef = useRef(tree);
+  const hasLoadedOnce = useRef(false);
 
   // タスクツリーを読み込み
   useEffect(() => {
@@ -523,21 +561,25 @@ function TasksPageContent() {
       const loadedTree = await getTaskTreeAsync(user.uid);
       setTree(loadedTree);
       setIsTreeLoading(false);
+      hasLoadedOnce.current = true; // 初回ロード完了
     };
 
     loadTree();
   }, [user]);
 
   // タスクツリーが変更されたら保存
-  const saveTreeRef = useRef(tree);
   useEffect(() => {
     // 初回レンダリングはスキップ
     if (tree === saveTreeRef.current) return;
     if (!user) return;
+    // ローディング中は保存しない（空配列の保存を防ぐ）
+    if (isTreeLoading) return;
+    // 最初のロードが完了するまで保存しない
+    if (!hasLoadedOnce.current) return;
 
     saveTreeRef.current = tree;
     saveTaskTreeAsync(tree, user.uid);
-  }, [tree, user]);
+  }, [tree, user, isTreeLoading]);
 
   // ハイライト対象のノードとその親を自動展開
   useEffect(() => {
@@ -824,6 +866,12 @@ function TasksPageContent() {
   }
 
   return (
+    <Box
+      w={{ base: "100%", md: isMiniChatOpen ? "70%" : "100%" }}
+      transition="width 0.3s ease"
+      minH="100vh"
+      bg="gray.50"
+    >
     <Box px={{ base: 2, md: 4 }} py={{ base: 4, md: 6 }} bg="gray.50" minH="100vh" pb="80px">
       <Flex
         justify="space-between"
@@ -884,7 +932,39 @@ function TasksPageContent() {
         )}
       </VStack>
 
-      <NavTabs />
+      <MiniCharacter
+        onChatOpenChange={setIsMiniChatOpen}
+        taskTree={tree}
+        onAddTask={(parentId, title) => {
+          const newNode: any = {
+            id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+            title: `Task: ${title}`,
+            ai: false,
+            status: "未着手",
+          };
+
+          const updateTree = (nodes: any[]): any[] => {
+            return nodes.map((node) => {
+              if (node.id === parentId) {
+                return {
+                  ...node,
+                  children: [...(node.children || []), newNode],
+                };
+              } else if (node.children) {
+                return {
+                  ...node,
+                  children: updateTree(node.children),
+                };
+              }
+              return node;
+            });
+          };
+
+          setTree(updateTree(tree));
+        }}
+        onUpdateMemo={handleUpdateMemo}
+      />
+      <NavTabs shrink={isMiniChatOpen} />
 
       {/* Period Modal */}
       <Dialog.Root open={isPeriodModalOpen} onOpenChange={(e) => setIsPeriodModalOpen(e.open)}>
@@ -1066,6 +1146,7 @@ function TasksPageContent() {
         </Dialog.Positioner>
       </Dialog.Root>
 
+    </Box>
     </Box>
   );
 }

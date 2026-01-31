@@ -5,6 +5,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import {
   TASK_REMINDER_MESSAGES,
   OVERDUE_TASK_MESSAGES,
+  STALLED_TASK_MESSAGES,
   getRandomMessage,
   formatTaskMessage,
 } from "@/lib/notifications/messages";
@@ -73,34 +74,55 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Get incomplete tasks for this user
-      const tasksSnapshot = await db
-        .collection("tasks")
-        .where("userId", "==", userId)
-        .where("status", "in", ["未着手", "進行中"])
-        .limit(5)
-        .get();
+      // Get task tree for this user
+      const taskTreeDoc = await db.collection("taskTrees").doc(userId).get();
 
-      if (tasksSnapshot.empty) {
+      if (!taskTreeDoc.exists) {
         continue;
       }
 
-      // Find overdue or upcoming tasks
+      const taskTree = taskTreeDoc.data()?.tree || [];
+
+      // Find incomplete tasks with deadlines from the tree
       interface TaskData {
         id: string;
         title?: string;
-        deadline?: string;
-        status?: string;
+        endDate?: string;
+        archived?: boolean;
       }
 
-      const incompleteTasks: TaskData[] = tasksSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as TaskData));
+      const extractIncompleteTasks = (nodes: any[]): TaskData[] => {
+        const tasks: TaskData[] = [];
+        for (const node of nodes) {
+          // 未完了のノード（archivedでない）で期限があるもの
+          if (!node.archived && node.endDate) {
+            tasks.push({
+              id: node.id,
+              title: node.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, ""),
+              endDate: node.endDate,
+            });
+          }
+          if (node.children && node.children.length > 0) {
+            tasks.push(...extractIncompleteTasks(node.children));
+          }
+        }
+        return tasks;
+      };
+
+      const incompleteTasks = extractIncompleteTasks(taskTree);
+
+      if (incompleteTasks.length === 0) {
+        continue;
+      }
+
+      // タスクツリーの最終更新日時を確認（停滞検出用）
+      const treeUpdatedAt = taskTreeDoc.data()?.updatedAt?.toDate?.() || new Date();
+      const daysSinceUpdate = Math.floor((now.getTime() - treeUpdatedAt.getTime()) / (1000 * 60 * 60 * 24));
+      const isStalled = daysSinceUpdate >= 3; // 3日以上更新がない場合は停滞とみなす
 
       const overdueTasks = incompleteTasks.filter(task => {
-        if (!task.deadline) return false;
-        const deadline = new Date(task.deadline);
+        if (!task.endDate) return false;
+        const deadline = new Date(task.endDate);
         return deadline < now;
       });
 
@@ -112,6 +134,11 @@ export async function GET(request: NextRequest) {
         const task = overdueTasks[0];
         const template = getRandomMessage(OVERDUE_TASK_MESSAGES);
         title = "期限切れタスクがあるよ！";
+        body = formatTaskMessage(template, task.title || "タスク");
+      } else if (isStalled) {
+        const task = incompleteTasks[0];
+        const template = getRandomMessage(STALLED_TASK_MESSAGES);
+        title = "最近どう？";
         body = formatTaskMessage(template, task.title || "タスク");
       } else {
         const task = incompleteTasks[0];

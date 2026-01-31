@@ -81,5 +81,10 @@ service cloud.firestore {
     match /loginStreaks/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // ユーザーナレッジ（雑談から学んだ情報）: 自分のデータのみ読み書き可能
+    match /userKnowledge/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

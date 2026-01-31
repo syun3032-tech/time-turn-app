@@ -14,6 +14,27 @@ export type AIProvider = "openai" | "anthropic" | "gemini";
 // APIキーのモード（コスト管理のため）
 export type APIKeyMode = "chat" | "task_breakdown";
 
+// クライアント側タイムアウト（サーバー側より少し長め）
+const CLIENT_TIMEOUT_MS = 20000; // 20秒
+
+/**
+ * タイムアウト付きfetch
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = CLIENT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * AIにタスク分解を依頼
  */
@@ -155,7 +176,7 @@ async function callAnthropic(prompt: string, mode: APIKeyMode = "chat") {
 async function callGemini(prompt: string, _mode: APIKeyMode = "chat") {
   // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -176,9 +197,9 @@ async function callGemini(prompt: string, _mode: APIKeyMode = "chat") {
       throw new Error(data.error || "API request failed");
     }
 
-    // デバッグ用: finish_reasonをログ出力
-    if (data.finishReason) {
-      console.log("Gemini API finish_reason:", data.finishReason);
+    // デバッグ用: finish_reasonとtraceIdをログ出力
+    if (data.finishReason || data.traceId) {
+      console.log("Gemini API response:", { finishReason: data.finishReason, traceId: data.traceId });
     }
 
     return {
@@ -186,12 +207,14 @@ async function callGemini(prompt: string, _mode: APIKeyMode = "chat") {
       content: data.content,
       provider: "gemini" as AIProvider,
       finishReason: data.finishReason,
+      traceId: data.traceId,
     };
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    console.error("Gemini API Error:", { error, isTimeout });
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: isTimeout ? "リクエストがタイムアウトしました。もう一度お試しください。" : (error instanceof Error ? error.message : "Unknown error"),
       provider: "gemini" as AIProvider,
     };
   }
@@ -315,7 +338,7 @@ async function chatWithGemini(
 ) {
   // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -334,9 +357,9 @@ async function chatWithGemini(
       throw new Error(data.error || "API request failed");
     }
 
-    // デバッグ用: finish_reasonをログ出力
-    if (data.finishReason) {
-      console.log("Gemini API finish_reason:", data.finishReason);
+    // デバッグ用: finish_reasonとtraceIdをログ出力
+    if (data.finishReason || data.traceId) {
+      console.log("Gemini API response:", { finishReason: data.finishReason, traceId: data.traceId });
     }
 
     return {
@@ -344,11 +367,13 @@ async function chatWithGemini(
       content: data.content,
       provider: "gemini" as AIProvider,
       finishReason: data.finishReason,
+      traceId: data.traceId,
     };
   } catch (error) {
+    const isTimeout = error instanceof Error && error.name === "AbortError";
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: isTimeout ? "リクエストがタイムアウトしました。もう一度お試しください。" : (error instanceof Error ? error.message : "Unknown error"),
       provider: "gemini" as AIProvider,
     };
   }
@@ -551,7 +576,7 @@ async function chatWithGeminiWithMode(
 ) {
   // サーバーサイドAPI Route経由で呼び出し（CORSエラー回避）
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -570,9 +595,9 @@ async function chatWithGeminiWithMode(
       throw new Error(data.error || "API request failed");
     }
 
-    // デバッグ用: finish_reasonをログ出力
-    if (data.finishReason) {
-      console.log("Gemini API finish_reason:", data.finishReason);
+    // デバッグ用: finish_reasonとtraceIdをログ出力
+    if (data.finishReason || data.traceId) {
+      console.log("Gemini API response:", { finishReason: data.finishReason, traceId: data.traceId });
     }
 
     return {
@@ -580,12 +605,14 @@ async function chatWithGeminiWithMode(
       content: data.content,
       provider: "gemini" as AIProvider,
       finishReason: data.finishReason,
+      traceId: data.traceId,
     };
   } catch (error) {
-    console.error("Chat API Error:", error);
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    console.error("Chat API Error:", { error, isTimeout });
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: isTimeout ? "リクエストがタイムアウトしました。もう一度お試しください。" : (error instanceof Error ? error.message : "Unknown error"),
       provider: "gemini" as AIProvider,
     };
   }

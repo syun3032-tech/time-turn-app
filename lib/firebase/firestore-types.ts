@@ -183,3 +183,17 @@ export interface ConversationMessage {
   content: string
   createdAt: Date
 }
+
+/**
+ * ユーザーナレッジ（雑談から抽出した情報）
+ */
+export interface UserKnowledge {
+  userId: string
+  interests: string[]        // 興味・関心（「プログラミング」「英語学習」など）
+  experiences: string[]      // 経験・スキル（「Web開発3年」「TOEIC600点」など）
+  personality: string[]      // 性格・特性（「朝型」「計画好き」「完璧主義」など）
+  challenges: string[]       // 課題・苦手（「継続が苦手」「集中力が続かない」など）
+  goals: string[]           // 将来の夢・目標（「フリーランス」「海外移住」など）
+  context: string[]         // その他の文脈情報（「大学生」「仕事忙しい」など）
+  updatedAt: Date
+}

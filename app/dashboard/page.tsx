@@ -9,9 +9,11 @@ import { Dialog } from "@chakra-ui/react";
 import { chatWithAISeamless, AIProvider } from "@/lib/ai-service";
 import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree, generateNodeId } from "@/lib/task-tree-storage";
 import { TaskNode } from "@/types/task-tree";
-import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt } from "@/lib/prompts";
+import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, type UserKnowledgeForPrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getChatMessages, saveChatMessage, getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, type UsageData } from "@/lib/firebase/firestore";
+import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getUserKnowledge, updateUserKnowledge, type UsageData } from "@/lib/firebase/firestore";
+import { extractKnowledgeFromConversation, shouldExtractKnowledge } from "@/lib/knowledge-extractor";
+import type { UserKnowledge } from "@/lib/firebase/firestore-types";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
@@ -22,6 +24,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { NotificationPermission } from "@/components/NotificationPermission";
 import { FiSettings, FiMenu } from "react-icons/fi";
 import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
+import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
 
 interface Message {
   role: "user" | "assistant";
@@ -48,9 +51,18 @@ export default function DashboardPage() {
   const { user, loading } = useAuth();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [characterMessage, setCharacterMessage] = useState("今日はどのタスクから行く？");
+  const [characterMessage, setCharacterMessage] = useState("");
+  const [hasShownInitialGreeting, setHasShownInitialGreeting] = useState(false);
   const [characterExpression, setCharacterExpression] = useState<Expression>("normal"); // 初期はノーマル
   const [isLoading, setIsLoading] = useState(false);
+
+  // タイピングアニメーション
+  const { displayedText: typedMessage, isTyping } = useTypingAnimation(characterMessage, {
+    speed: 35,
+    enabled: !isLoading, // ローディング中は無効
+  });
+  const bubbleScrollRef = useRef<HTMLDivElement>(null);
+  const [isBubbleExpanded, setIsBubbleExpanded] = useState(false); // 吹き出し展開状態
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false); // 会話履歴モーダル
   const [provider] = useState<AIProvider>("gemini");
   // ステージ: normal → hearing → proposal → output
@@ -97,6 +109,10 @@ export default function DashboardPage() {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [pendingTaskNodes, setPendingTaskNodes] = useState<TaskNode[]>([]);
   const [confirmSummary, setConfirmSummary] = useState("");
+
+  // ユーザーナレッジ（雑談から学んだ情報）
+  const [userKnowledge, setUserKnowledge] = useState<UserKnowledge | null>(null);
+  const [lastExtractionCount, setLastExtractionCount] = useState(0);
 
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
@@ -162,31 +178,188 @@ export default function DashboardPage() {
     loadTaskTree();
   }, [user]);
 
-  // 会話履歴をFirestoreから読み込み
+  // ユーザーナレッジを読み込み
   useEffect(() => {
     if (!user) return;
 
-    const loadChatHistory = async () => {
+    const loadKnowledge = async () => {
       try {
-        const chatMessages = await getChatMessages(user.uid);
-        const formattedMessages: Message[] = chatMessages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }));
-        setMessages(formattedMessages);
-
-        // 最後のアシスタントメッセージを表示
-        const lastAssistant = formattedMessages.filter((m: Message) => m.role === "assistant").pop();
-        if (lastAssistant) {
-          setCharacterMessage(lastAssistant.content);
-        }
+        const knowledge = await getUserKnowledge(user.uid);
+        setUserKnowledge(knowledge);
       } catch (error) {
-        console.error("Failed to load chat history:", error);
+        console.error("Failed to load knowledge:", error);
       }
     };
 
-    loadChatHistory();
+    loadKnowledge();
   }, [user]);
+
+  // currentConversationIdが変わったらlocalStorageに保存
+  useEffect(() => {
+    if (!user) return;
+
+    if (currentConversationId) {
+      localStorage.setItem(`lastConversationId_${user.uid}`, currentConversationId);
+    } else {
+      localStorage.removeItem(`lastConversationId_${user.uid}`);
+    }
+  }, [user, currentConversationId]);
+
+  // 最後にアクティブだった会話を復元
+  useEffect(() => {
+    if (!user || conversations.length === 0) return;
+
+    const restoreLastConversation = async () => {
+      // すでに会話が選択されている場合はスキップ
+      if (currentConversationId) return;
+
+      try {
+        // localStorageから最後の会話IDを取得
+        const lastConvId = localStorage.getItem(`lastConversationId_${user.uid}`);
+
+        if (lastConvId) {
+          // その会話がまだ存在するか確認
+          const convExists = conversations.find(c => c.id === lastConvId);
+          if (convExists) {
+            // 存在する場合は復元
+            await handleSelectConversation(lastConvId);
+            return;
+          }
+        }
+
+        // 最後の会話IDがないか、削除されている場合は初回挨拶を表示
+        // （何もしない = 初回挨拶のuseEffectが発火）
+      } catch (error) {
+        console.error("Failed to restore last conversation:", error);
+      }
+    };
+
+    restoreLastConversation();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, conversations.length]); // conversationsが読み込まれた後に実行
+
+  // 初回挨拶を生成（会話がない時に表示）- 雑談っぽく！
+  useEffect(() => {
+    // 条件: プロフィール読み込み済み、会話なし、初回挨拶まだ、会話IDなし
+    if (profileLoading || hasShownInitialGreeting || currentConversationId) return;
+    if (messages.length > 0) return;
+
+    const generateCasualGreeting = () => {
+      const hour = new Date().getHours();
+      const nickname = userProfile?.nickname;
+      const name = nickname ? `${nickname}さん` : "";
+      const dayOfWeek = new Date().getDay(); // 0=日曜, 6=土曜
+
+      // 早朝 (5-7時)
+      if (hour >= 5 && hour < 7) {
+        const patterns = [
+          `おはようございます${name ? `、${name}` : ""}！早起きですね〜。`,
+          `${name ? `${name}、` : ""}おはようございます！朝早いですね、えらい！`,
+          `おはよう...ございます...。${name ? `${name}も` : ""}早起きなんですね。`,
+          `ふあぁ...おはようございます${name ? `、${name}` : ""}。朝は眠いですよね...。`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 朝 (7-10時)
+      if (hour >= 7 && hour < 10) {
+        const patterns = [
+          `おはようございます${name ? `、${name}` : ""}！朝ごはん食べましたか？`,
+          `${name ? `${name}、` : ""}おはようございます！よく眠れましたか？`,
+          `おはようございます！${name ? `${name}、` : ""}今日もいい天気...かな？`,
+          `おはよう...ございます！${name ? `${name}は` : ""}朝型ですか？`,
+          `おはようございます${name ? `、${name}` : ""}！今日も一日、頑張りましょうね。`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 午前中 (10-12時)
+      if (hour >= 10 && hour < 12) {
+        const patterns = [
+          `${name ? `${name}、` : ""}こんにちは！午前中、調子どうですか？`,
+          `こんにちは${name ? `、${name}` : ""}！もうすぐお昼ですね〜。`,
+          `${name ? `${name}、` : ""}おはよう...じゃなくて、こんにちはですね！`,
+          `こんにちは！${name ? `${name}、` : ""}お腹空いてきませんか？`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // お昼 (12-14時)
+      if (hour >= 12 && hour < 14) {
+        const patterns = [
+          `こんにちは${name ? `、${name}` : ""}！お昼ごはん食べましたか？`,
+          `${name ? `${name}、` : ""}こんにちは！お昼休み中ですか？`,
+          `こんにちは！${name ? `${name}は` : ""}お昼何食べました？...気になります！`,
+          `お昼ですね〜。${name ? `${name}、` : ""}ちゃんとご飯食べてくださいね！`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 午後 (14-17時)
+      if (hour >= 14 && hour < 17) {
+        const patterns = [
+          `こんにちは${name ? `、${name}` : ""}！午後も頑張ってますか？`,
+          `${name ? `${name}、` : ""}こんにちは！眠くなる時間ですよね...。`,
+          `こんにちは！${name ? `${name}、` : ""}おやつ食べました？`,
+          `${name ? `${name}、` : ""}お疲れ様です！午後はどうですか？`,
+          dayOfWeek === 5 ? `${name ? `${name}、` : ""}金曜日ですね！もうひと踏ん張り！` : `こんにちは${name ? `、${name}` : ""}！`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 夕方 (17-19時)
+      if (hour >= 17 && hour < 19) {
+        const patterns = [
+          `${name ? `${name}、` : ""}お疲れ様です！今日はどんな一日でしたか？`,
+          `こんばんは${name ? `、${name}` : ""}！晩ごはん何にします？`,
+          `${name ? `${name}、` : ""}お疲れ様です！もう夕方ですね〜。`,
+          `お疲れ様です！${name ? `${name}、` : ""}今日も頑張りましたね。`,
+          dayOfWeek === 5 ? `${name ? `${name}、` : ""}やっと金曜の夜ですね！お疲れ様でした！` : `${name ? `${name}、` : ""}お疲れ様です！`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 夜 (19-22時)
+      if (hour >= 19 && hour < 22) {
+        const patterns = [
+          `こんばんは${name ? `、${name}` : ""}！晩ごはん食べましたか？`,
+          `${name ? `${name}、` : ""}こんばんは！今日も一日お疲れ様でした。`,
+          `こんばんは！${name ? `${name}、` : ""}夜はゆっくりできてますか？`,
+          `${name ? `${name}、` : ""}こんばんは！今日あったこと、聞かせてください！`,
+          `こんばんは${name ? `、${name}` : ""}！夜ご飯、美味しかったですか？`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 深夜 (22-24時)
+      if (hour >= 22 && hour < 24) {
+        const patterns = [
+          `${name ? `${name}、` : ""}まだ起きてるんですね！夜更かしですか？`,
+          `こんばんは${name ? `、${name}` : ""}...って、もうこんな時間！`,
+          `${name ? `${name}、` : ""}お疲れ様です。そろそろ休む時間ですよ〜。`,
+          `夜遅いですね...${name ? `${name}、` : ""}無理しないでくださいね。`,
+          `${name ? `${name}、` : ""}こんな時間まで...お疲れ様です！`,
+        ];
+        return patterns[Math.floor(Math.random() * patterns.length)];
+      }
+
+      // 深夜〜早朝 (0-5時)
+      const patterns = [
+        `えっ...${name ? `${name}、` : ""}こんな時間に！？大丈夫ですか？`,
+        `${name ? `${name}...` : ""}夜更かしさんですね...。体調気をつけてくださいね。`,
+        `わ、びっくり！${name ? `${name}、` : ""}まだ起きてたんですか？`,
+        `${name ? `${name}、` : ""}眠れないんですか...？`,
+        `深夜ですね...${name ? `${name}も` : ""}夜型なんですか？`,
+      ];
+      return patterns[Math.floor(Math.random() * patterns.length)];
+    };
+
+    const greeting = generateCasualGreeting();
+    setCharacterMessage(greeting);
+    // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
+    setMessages([{ role: "assistant", content: greeting }]);
+    setHasShownInitialGreeting(true);
+  }, [profileLoading, userProfile, messages.length, hasShownInitialGreeting, currentConversationId]);
 
   // 利用制限状況を読み込み + ログイン連続日数を更新
   useEffect(() => {
@@ -278,7 +451,22 @@ export default function DashboardPage() {
     };
   }, []);
 
+  // タイピング中に吹き出しを自動スクロール
+  useEffect(() => {
+    if (isTyping && bubbleScrollRef.current) {
+      bubbleScrollRef.current.scrollTop = bubbleScrollRef.current.scrollHeight;
+    }
+  }, [typedMessage, isTyping]);
+
   // === 会話管理ハンドラー ===
+
+  // 時間帯に応じた挨拶を取得
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return "おはようございます";
+    if (hour >= 12 && hour < 18) return "こんにちは";
+    return "こんばんは";
+  };
 
   // 新規会話を作成
   const handleNewConversation = async () => {
@@ -288,7 +476,21 @@ export default function DashboardPage() {
       const newConvId = await createConversation(user.uid, '新しい会話');
       setCurrentConversationId(newConvId);
       setMessages([]);
-      setCharacterMessage("今日はどのタスクから行く？");
+
+      // 新規会話の挨拶（雑談っぽく）
+      const nickname = userProfile?.nickname;
+      const name = nickname ? `${nickname}さん` : "";
+      const patterns = [
+        `${name ? `${name}、` : ""}また会えましたね！最近どうですか？`,
+        `新しい会話ですね！${name ? `${name}、` : ""}調子どうですか？`,
+        `${name ? `${name}！` : ""}また話せて嬉しいです。何かありました？`,
+        `${name ? `${name}、` : ""}どうも〜！元気ですか？`,
+      ];
+      const greeting = patterns[Math.floor(Math.random() * patterns.length)];
+      setCharacterMessage(greeting);
+      // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
+      setMessages([{ role: "assistant", content: greeting }]);
+
       setTaskBreakdownStage("normal");
       setGoalContext("");
       setHearingProgress({ why: false, current: false, target: false, timeline: false });
@@ -322,7 +524,18 @@ export default function DashboardPage() {
       if (lastAssistant) {
         setCharacterMessage(lastAssistant.content);
       } else {
-        setCharacterMessage("今日はどのタスクから行く？");
+        // 会話がない場合の挨拶（雑談っぽく）
+        const nickname = userProfile?.nickname;
+        const name = nickname ? `${nickname}さん` : "";
+        const patterns = [
+          `${name ? `${name}、` : ""}この会話の続きですね！`,
+          `あ、${name ? `${name}！` : ""}前の話の続きですか？`,
+          `${name ? `${name}、` : ""}何か思い出しました？`,
+        ];
+        const greeting = patterns[Math.floor(Math.random() * patterns.length)];
+        setCharacterMessage(greeting);
+        // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
+        setMessages([{ role: "assistant", content: greeting }]);
       }
 
       // 会話からヒアリング状態を復元
@@ -341,13 +554,17 @@ export default function DashboardPage() {
         // ヒアリング要約を復元
         if (selectedConv.hearingSummary) {
           setHearingSummary(selectedConv.hearingSummary);
+          // goalContextも復元
+          setGoalContext(selectedConv.hearingSummary.goal || "");
         } else {
           setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+          setGoalContext("");
         }
       } else {
         setTaskBreakdownStage("normal");
         setHearingProgress({ why: false, current: false, target: false, timeline: false });
         setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+        setGoalContext("");
       }
     } catch (error) {
       console.error("Failed to load conversation:", error);
@@ -376,8 +593,18 @@ export default function DashboardPage() {
       // 削除した会話が現在表示中なら、メッセージをクリア
       if (currentConversationId === conversationId) {
         setCurrentConversationId(null);
-        setMessages([]);
-        setCharacterMessage("今日はどのタスクから行く？");
+        // 削除後の挨拶（雑談っぽく）
+        const nickname = userProfile?.nickname;
+        const name = nickname ? `${nickname}さん` : "";
+        const patterns = [
+          `${name ? `${name}、` : ""}スッキリしましたね！`,
+          `整理整頓、大事ですよね。${name ? `${name}、` : ""}どうします？`,
+          `${name ? `${name}、` : ""}片付け完了です！`,
+        ];
+        const greeting = patterns[Math.floor(Math.random() * patterns.length)];
+        setCharacterMessage(greeting);
+        // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
+        setMessages([{ role: "assistant", content: greeting }]);
       }
 
       // 会話一覧を再読み込み
@@ -669,7 +896,37 @@ export default function DashboardPage() {
 
       // === Stage 1: Normal → Hearing ===
       // キーワード検出で hearing stage に移行
-      const hasTaskKeyword = /やりたい|成したい|達成したい|目標|勉強したい|学びたい|習得したい|始めたい|作りたい|実現したい|タスク|分解|計画|ステップ|行きたい|なりたい|受かりたい/.test(message);
+      // やる気・意欲を感じるキーワードを検出
+      const motivationKeywords = [
+        // 〜したい系（意欲表現）
+        "やりたい", "したい", "なりたい", "行きたい", "始めたい", "作りたい",
+        "変わりたい", "挑戦したい", "頑張りたい", "成功したい", "達成したい",
+        "勉強したい", "学びたい", "習得したい", "上達したい", "マスターしたい",
+        "痩せたい", "稼ぎたい", "貯めたい", "増やしたい",
+        "転職したい", "独立したい", "起業したい", "就職したい",
+        "合格したい", "受かりたい", "取りたい", "受けたい",
+        "克服したい", "治したい", "直したい", "改善したい", "やめたい", "辞めたい",
+        "出たい", "入りたい", "続けたい", "できるようになりたい",
+        // 〜する系（決意表現）
+        "やる", "決めた", "決意", "決心", "本気", "覚悟",
+        // 目標・計画系
+        "目標", "夢", "将来", "いつか", "そのうち",
+        // やる気表現
+        "モチベ", "やる気", "頑張る", "頑張ろう", "挑戦", "チャレンジ",
+        // その他意欲
+        "変えたい", "よくしたい", "うまくなりたい", "強くなりたい",
+      ];
+      const hasTaskKeyword = motivationKeywords.some(keyword => message.includes(keyword));
+
+      // ナレッジをプロンプト用に変換
+      const knowledgeForPrompt: UserKnowledgeForPrompt | null = userKnowledge ? {
+        interests: userKnowledge.interests,
+        experiences: userKnowledge.experiences,
+        personality: userKnowledge.personality,
+        challenges: userKnowledge.challenges,
+        goals: userKnowledge.goals,
+        context: userKnowledge.context,
+      } : null;
 
       if (taskBreakdownStage === "normal" && hasTaskKeyword) {
         setTaskBreakdownStage("hearing");
@@ -677,7 +934,10 @@ export default function DashboardPage() {
         setHearingSummary(prev => ({ ...prev, goal: message }));
 
         // 最初は興味を示す
-        systemPrompt = getInterestStagePrompt();
+        systemPrompt = getInterestStagePrompt(userProfile);
+      } else if (taskBreakdownStage === "normal") {
+        // 目標キーワードがない場合は雑談モード
+        systemPrompt = getChatModePrompt(userProfile, knowledgeForPrompt);
       }
       // === Stage 2: Hearing ===
       // ヒアリング中 - 進捗を更新して次の質問を促す
@@ -695,7 +955,7 @@ export default function DashboardPage() {
           systemPrompt = getHearingCompletePrompt({
             ...hearingSummary,
             why: hearingSummary.why || message,
-          });
+          }, userProfile);
         } else {
           // まだヒアリング中 - 次の質問を促す
           const nextItem = HEARING_ITEMS.find(
@@ -705,7 +965,8 @@ export default function DashboardPage() {
           systemPrompt = getHearingPrompt(
             updatedProgress,
             nextItem,
-            goalContext
+            goalContext,
+            userProfile
           );
         }
       }
@@ -716,24 +977,24 @@ export default function DashboardPage() {
 
         if (userAgreed) {
           setTaskBreakdownStage("output");
-          systemPrompt = getTaskOutputPrompt(hearingSummary);
+          systemPrompt = getTaskOutputPrompt(hearingSummary, userProfile);
         } else {
           // まだ同意を待つ
-          systemPrompt = getHearingCompletePrompt(hearingSummary);
+          systemPrompt = getHearingCompletePrompt(hearingSummary, userProfile);
         }
       }
       // === Stage 4: Output ===
       // タスク出力モード
       else if (taskBreakdownStage === "output") {
-        systemPrompt = getTaskOutputPrompt(hearingSummary);
+        systemPrompt = getTaskOutputPrompt(hearingSummary, userProfile);
       }
 
-      // Few-shot examples を先頭に追加（AIに短い会話を学習させる）
+      // Few-shot examples を先頭に追加（AIに敬語ベースの会話を学習させる）
       const fewShotExamples: Message[] = [
         { role: "user", content: "新しいこと始めたい" },
-        { role: "assistant", content: "いいね！どんなこと？" },
+        { role: "assistant", content: "おお、いいですね！どんなことですか？" },
         { role: "user", content: "まだ決まってないけど何か挑戦したくて" },
-        { role: "assistant", content: "そうなんだ！何かきっかけあったの？" },
+        { role: "assistant", content: "そうなんですね！何かきっかけがあったんですか？" },
       ];
 
       // === プラン3: トークン節約 ===
@@ -815,6 +1076,29 @@ export default function DashboardPage() {
         // 返答内容に応じて表情を変更（5秒後にnormalに戻る）
         const expression = getExpressionForMessage(response.content);
         setExpressionWithAutoReset(expression);
+
+        // ナレッジ抽出（バックグラウンド処理）
+        // 雑談モード（normal）で十分な会話がある場合のみ
+        const allMessages = [...newMessages, assistantMessage];
+        if (taskBreakdownStage === "normal" && shouldExtractKnowledge(allMessages.length, lastExtractionCount)) {
+          // 非同期で実行（UIをブロックしない）
+          extractKnowledgeFromConversation(allMessages).then(async (extracted) => {
+            if (extracted && user) {
+              try {
+                await updateUserKnowledge(user.uid, extracted);
+                // ローカル状態も更新
+                const updatedKnowledge = await getUserKnowledge(user.uid);
+                setUserKnowledge(updatedKnowledge);
+                setLastExtractionCount(allMessages.length);
+                console.log("Knowledge extracted and saved:", extracted);
+              } catch (err) {
+                console.error("Failed to save knowledge:", err);
+              }
+            }
+          }).catch(err => {
+            console.error("Knowledge extraction failed:", err);
+          });
+        }
       } else {
         // レート制限やクォータエラーの検出
         const errorMsg = response.error?.toLowerCase() || "";
@@ -877,11 +1161,13 @@ export default function DashboardPage() {
       {/* ヘッダー */}
       <Box
         bg="white"
-        px={4}
-        py={3}
+        px={{ base: 4, md: 8 }}
+        py={{ base: 3, md: 4 }}
         boxShadow="sm"
         borderBottom="1px solid"
         borderColor="gray.200"
+        position="relative"
+        zIndex={50}
       >
         <HStack justify="space-between" align="center">
           <HStack
@@ -889,30 +1175,30 @@ export default function DashboardPage() {
             onClick={() => setIsSidebarOpen(true)}
             _hover={{ opacity: 0.7 }}
           >
-            <Box color="gray.700">
-              <FiMenu size={20} />
+            <Box color="gray.700" fontSize={{ base: "20px", md: "28px" }}>
+              <FiMenu />
             </Box>
-            <Text fontWeight="bold" fontSize="lg" color="gray.800">
+            <Text fontWeight="bold" fontSize={{ base: "lg", md: "2xl" }} color="gray.800">
               TimeTurn
             </Text>
           </HStack>
           <Button
-            size="xs"
+            size={{ base: "xs", md: "md" }}
             colorScheme="gray"
             variant="ghost"
             color="gray.700"
             onClick={() => setShowSettings(true)}
           >
             <HStack gap={1}>
-              <FiSettings />
-              <Text>設定</Text>
+              <Box fontSize={{ base: "14px", md: "20px" }}><FiSettings /></Box>
+              <Text fontSize={{ base: "sm", md: "md" }}>設定</Text>
             </HStack>
           </Button>
         </HStack>
       </Box>
 
-      {/* メインコンテンツ */}
-      <VStack gap={0} pt={8}>
+      {/* メインコンテンツ - モバイル版 */}
+      <VStack gap={0} pt={8} display={{ base: "flex", md: "none" }}>
         {/* ヒアリング進捗インジケーター */}
         {taskBreakdownStage === "hearing" && (
           <Box w="90%" maxW="340px" mb={4}>
@@ -975,72 +1261,102 @@ export default function DashboardPage() {
           </Box>
         )}
 
-        {/* キャラクター立ち絵（常に大きく表示） */}
+        {/* キャラクター + 吹き出し + 入力欄（重ねて表示） - モバイル版 */}
         <Box
           position="relative"
           w="100%"
           display="flex"
-          justifyContent="center"
-          mb={6}
+          flexDirection="column"
+          alignItems="center"
+          minH="520px"
         >
           <CharacterAvatar
             expression={characterExpression}
             width="280px"
             height="420px"
           />
-        </Box>
 
-        {/* 吹き出し（常に表示、最新のゆりの発言） */}
-        <Box
-          bg="white"
-          mx={4}
-          px={6}
-          py={4}
-          borderRadius="16px"
-          boxShadow="0 4px 12px rgba(0,0,0,0.08)"
-          border="1px solid"
-          borderColor="gray.200"
-          position="relative"
-          maxW="340px"
-          w="90%"
-          mb={4}
-        >
-          {/* 吹き出しのしっぽ（上向き三角形） */}
+          {/* 吹き出し */}
           <Box
-            position="absolute"
-            top="-12px"
-            left="50%"
-            transform="translateX(-50%)"
-            w="0"
-            h="0"
-            borderLeft="12px solid transparent"
-            borderRight="12px solid transparent"
-            borderBottom="12px solid white"
-            filter="drop-shadow(0 -2px 2px rgba(0,0,0,0.04))"
-          />
+            bg="white"
+            px={6}
+            py={4}
+            borderRadius="16px"
+            boxShadow={isBubbleExpanded ? "0 8px 24px rgba(0,0,0,0.15)" : "0 4px 12px rgba(0,0,0,0.08)"}
+            border="1px solid"
+            borderColor="gray.200"
+            position={isBubbleExpanded ? "fixed" : "absolute"}
+            top={isBubbleExpanded ? "50%" : "360px"}
+            left={isBubbleExpanded ? "50%" : "auto"}
+            transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
+            maxW={isBubbleExpanded ? "90vw" : "340px"}
+            w={isBubbleExpanded ? "90vw" : "90%"}
+            zIndex={isBubbleExpanded ? 100 : 10}
+            cursor="pointer"
+            onClick={() => !isTyping && setIsBubbleExpanded(!isBubbleExpanded)}
+            transition="all 0.2s ease"
+          >
+            {!isBubbleExpanded && (
+              <Box
+                position="absolute"
+                top="-12px"
+                left="50%"
+                transform="translateX(-50%)"
+                w="0"
+                h="0"
+                borderLeft="12px solid transparent"
+                borderRight="12px solid transparent"
+                borderBottom="12px solid white"
+                filter="drop-shadow(0 -2px 2px rgba(0,0,0,0.04))"
+              />
+            )}
 
-          <VStack align="stretch" gap={2}>
-            <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.6" whiteSpace="pre-wrap">
-              {isLoading ? "考えています..." : characterMessage}
-            </Text>
-          </VStack>
+            <Box ref={bubbleScrollRef} maxH={isBubbleExpanded ? "60vh" : "100px"} overflowY="auto">
+              <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.6" whiteSpace="pre-wrap">
+                {isLoading ? "考えています..." : typedMessage}
+                {!isLoading && isTyping && (
+                  <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
+                )}
+              </Text>
+            </Box>
+
+            {isBubbleExpanded && (
+              <Text fontSize="xs" color="gray.400" textAlign="center" mt={2}>
+                タップで閉じる
+              </Text>
+            )}
+          </Box>
+
+          {isBubbleExpanded && (
+            <Box
+              position="fixed"
+              top={0}
+              left={0}
+              right={0}
+              bottom={0}
+              bg="blackAlpha.500"
+              zIndex={99}
+              onClick={() => setIsBubbleExpanded(false)}
+            />
+          )}
         </Box>
 
-        {/* 会話履歴ボタン（会話がある時のみ表示） */}
+        {/* 会話履歴ボタン - モバイル版 */}
         {messages.length > 0 && (
           <Button
             size="sm"
             variant="ghost"
             colorScheme="gray"
             onClick={() => setIsHistoryModalOpen(true)}
-            mb={2}
+            mb={1}
+            mt={-2}
           >
             📝 会話履歴を見る ({messages.length / 2}往復)
           </Button>
         )}
 
-        {/* チャット入力欄 */}
-        <Box w="90%" maxW="340px" mb={6}>
+        {/* チャット入力欄 - モバイル版 */}
+        <Box w="90%" maxW="340px" mb={4}>
           <VStack gap={2}>
             <Input
               placeholder={
@@ -1089,6 +1405,232 @@ export default function DashboardPage() {
           </VStack>
         </Box>
       </VStack>
+
+      {/* メインコンテンツ - PC版（キャラクター背面レイアウト） */}
+      <Box
+        display={{ base: "none", md: "block" }}
+        position="relative"
+        h="calc(100vh - 140px)"
+        overflow="hidden"
+      >
+        {/* 背面: キャラクター */}
+        <Box
+          position="absolute"
+          left="5%"
+          bottom="0"
+          zIndex={1}
+          pointerEvents="none"
+        >
+          <CharacterAvatar
+            expression={characterExpression}
+            width="420px"
+            height="630px"
+          />
+        </Box>
+
+        {/* 前面: 吹き出し + 入力欄 */}
+        <Box
+          position="relative"
+          zIndex={10}
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          h="100%"
+          px={8}
+          ml="350px"
+        >
+          <VStack gap={6} maxW="600px" w="100%">
+          {/* ヒアリング進捗インジケーター - PC版 */}
+          {taskBreakdownStage === "hearing" && (
+            <Box w="100%">
+              <Box
+                bg="teal.500"
+                px={6}
+                py={3}
+                borderRadius="lg"
+                boxShadow="md"
+                mb={3}
+              >
+                <Text color="white" fontWeight="bold" fontSize="lg" textAlign="center">
+                  💭 ヒアリング中... {hearingPercentage}%
+                </Text>
+              </Box>
+              <HStack gap={2} justify="center">
+                {HEARING_ITEMS.map((item) => (
+                  <Box
+                    key={item.key}
+                    px={3}
+                    py={2}
+                    borderRadius="md"
+                    bg={hearingProgress[item.key as keyof HearingProgress] ? "teal.600" : "gray.200"}
+                    color={hearingProgress[item.key as keyof HearingProgress] ? "white" : "gray.500"}
+                    fontSize="sm"
+                    fontWeight="semibold"
+                  >
+                    {hearingProgress[item.key as keyof HearingProgress] ? "✓" : ""} {item.label}
+                  </Box>
+                ))}
+              </HStack>
+            </Box>
+          )}
+          {taskBreakdownStage === "proposal" && (
+            <Box
+              bg="teal.500"
+              px={6}
+              py={3}
+              borderRadius="full"
+              boxShadow="md"
+              maxW="fit-content"
+            >
+              <Text color="white" fontWeight="bold" fontSize="lg">
+                ✅ ヒアリング完了！タスク分解の確認中
+              </Text>
+            </Box>
+          )}
+          {taskBreakdownStage === "output" && (
+            <Box
+              bg="teal.500"
+              px={6}
+              py={3}
+              borderRadius="full"
+              boxShadow="md"
+              maxW="fit-content"
+            >
+              <Text color="white" fontWeight="bold" fontSize="lg">
+                ✨ タスクツリーを生成中...
+              </Text>
+            </Box>
+          )}
+
+          {/* 吹き出し - PC版 */}
+          <Box
+            bg="white"
+            px={8}
+            py={6}
+            borderRadius="20px"
+            boxShadow={isBubbleExpanded ? "0 8px 24px rgba(0,0,0,0.15)" : "0 4px 20px rgba(0,0,0,0.12)"}
+            border="1px solid"
+            borderColor="gray.200"
+            position={isBubbleExpanded ? "fixed" : "relative"}
+            top={isBubbleExpanded ? "50%" : "auto"}
+            left={isBubbleExpanded ? "50%" : "auto"}
+            transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
+            maxW={isBubbleExpanded ? "700px" : "600px"}
+            w="100%"
+            zIndex={isBubbleExpanded ? 100 : 10}
+            cursor="pointer"
+            onClick={() => !isTyping && setIsBubbleExpanded(!isBubbleExpanded)}
+            transition="all 0.2s ease"
+          >
+            <Box ref={bubbleScrollRef} maxH={isBubbleExpanded ? "60vh" : "200px"} overflowY="auto">
+              <Text fontSize="xl" fontWeight="bold" color="gray.900" lineHeight="1.8" whiteSpace="pre-wrap">
+                {isLoading ? "考えています..." : typedMessage}
+                {!isLoading && isTyping && (
+                  <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
+                )}
+              </Text>
+            </Box>
+
+            {isBubbleExpanded && (
+              <Text fontSize="sm" color="gray.400" textAlign="center" mt={3}>
+                クリックで閉じる
+              </Text>
+            )}
+          </Box>
+
+          {/* 展開時のオーバーレイ - PC版 */}
+          {isBubbleExpanded && (
+            <Box
+              position="fixed"
+              top={0}
+              left={0}
+              right={0}
+              bottom={0}
+              bg="blackAlpha.500"
+              zIndex={99}
+              onClick={() => setIsBubbleExpanded(false)}
+            />
+          )}
+
+          {/* 会話履歴ボタン - PC版 */}
+          {messages.length > 0 && (
+            <Button
+              size="lg"
+              variant="ghost"
+              colorScheme="gray"
+              onClick={() => setIsHistoryModalOpen(true)}
+              maxW="fit-content"
+            >
+              📝 会話履歴を見る ({messages.length / 2}往復)
+            </Button>
+          )}
+
+          {/* チャット入力欄 - PC版 */}
+          <Box maxW="600px" w="100%">
+            <VStack gap={4}>
+              <Input
+                placeholder={
+                  taskBreakdownStage === "output"
+                    ? "タスクについて何かあれば..."
+                    : taskBreakdownStage === "proposal"
+                    ? "「お願い」「やろう」など..."
+                    : taskBreakdownStage === "hearing"
+                    ? "気軽に答えてください..."
+                    : "「〜したい」と話してみてください..."
+                }
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enterキーで送信（IME変換中は除く）
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                bg="white"
+                borderRadius="lg"
+                disabled={isLoading}
+                color="gray.900"
+                fontWeight="medium"
+                fontSize="lg"
+                size="lg"
+                h="60px"
+                _placeholder={{ color: "gray.400" }}
+              />
+              <Button
+                colorScheme="teal"
+                w="100%"
+                size="lg"
+                h="56px"
+                fontSize="lg"
+                onClick={handleSendMessage}
+                loading={isLoading}
+                disabled={!message.trim() || isLoading}
+              >
+                {isLoading ? "送信中..." : "送信"}
+              </Button>
+
+              {/* タスク反映ボタン - PC版 */}
+              {taskBreakdownStage === "output" && messages.length >= 4 && (
+                <Button
+                  colorScheme="blue"
+                  w="100%"
+                  size="lg"
+                  h="56px"
+                  fontSize="lg"
+                  onClick={() => {
+                    handleReflectToTaskTree();
+                  }}
+                >
+                  📋 タスクツリーに反映する
+                </Button>
+              )}
+            </VStack>
+          </Box>
+          </VStack>
+        </Box>
+      </Box>
 
       {/* ボトムナビ */}
       <NavTabs />

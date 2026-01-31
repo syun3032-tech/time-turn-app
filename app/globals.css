@@ -18,7 +18,7 @@ body {
 
 body {
   color: var(--foreground);
-  background: var(--background);
+  background: #f7fafc; /* gray.50 */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -39,4 +39,32 @@ a {
   html {
     color-scheme: dark;
   }
+}
+
+/* タイピングアニメーション用カーソル点滅 */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ミニキャラ歩きアニメーション（往復再生） */
+@keyframes miniCharWalk {
+  from { background-position: 0 0; }
+  to { background-position: -880px 0; }
+}
+
+.mini-character {
+  background-image: url('/sprites/walk-sprite.png');
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  animation: miniCharWalk 2s steps(11) infinite alternate;
+  transition: transform 0.3s ease;
+}
+
+.mini-character.face-right {
+  transform: scaleX(-1);
+}
+
+.mini-character.face-left {
+  transform: scaleX(1);
 }

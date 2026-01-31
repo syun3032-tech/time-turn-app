@@ -12,7 +12,11 @@ const tabs = [
   { href: "/profile", label: "プロフィール", icon: FiUser },
 ];
 
-export function NavTabs() {
+interface NavTabsProps {
+  shrink?: boolean;
+}
+
+export function NavTabs({ shrink = false }: NavTabsProps) {
   const pathname = usePathname();
 
   return (
@@ -21,13 +25,13 @@ export function NavTabs() {
       position="fixed"
       bottom={0}
       left={0}
-      right={0}
-      w="100%"
+      w={{ base: "100%", md: shrink ? "70%" : "100%" }}
+      transition="width 0.3s ease"
       bg="white"
       borderTop="1px solid"
       borderColor="gray.200"
-      px={3}
-      py={3}
+      px={{ base: 3, md: 8 }}
+      py={{ base: 3, md: 4 }}
       justify="space-around"
       align="center"
       zIndex={1000}
@@ -43,13 +47,13 @@ export function NavTabs() {
             flexDir="column"
             alignItems="center"
             justifyContent="center"
-            gap={1}
-            fontSize="xs"
+            gap={{ base: 1, md: 2 }}
+            fontSize={{ base: "xs", md: "md" }}
             color={active ? "teal.600" : "gray.500"}
             _hover={{ textDecoration: "none", color: "teal.600" }}
           >
-            <Box as={tab.icon} boxSize={6} strokeWidth={2} />
-            <Text fontSize="xs" fontWeight={active ? "semibold" : "normal"}>
+            <Box as={tab.icon} boxSize={{ base: 6, md: 8 }} strokeWidth={2} />
+            <Text fontSize={{ base: "xs", md: "md" }} fontWeight={active ? "semibold" : "normal"}>
               {tab.label}
             </Text>
           </ChakraLink>

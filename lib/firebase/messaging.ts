@@ -41,6 +41,13 @@ export async function requestNotificationPermission(): Promise<string | null> {
     return null;
   }
 
+  // Check if VAPID key is configured
+  if (!VAPID_KEY) {
+    console.warn("VAPID key is not configured. Please set NEXT_PUBLIC_FIREBASE_VAPID_KEY in .env.local");
+    console.warn("Get it from Firebase Console → Project Settings → Cloud Messaging → Web Push certificates");
+    return null;
+  }
+
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
@@ -53,8 +60,28 @@ export async function requestNotificationPermission(): Promise<string | null> {
       return null;
     }
 
-    // Register the service worker first
+    // Register the service worker and wait for it to be ready
     const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+
+    // Wait for the service worker to be active
+    if (registration.installing) {
+      await new Promise<void>((resolve) => {
+        registration.installing!.addEventListener("statechange", (e) => {
+          if ((e.target as ServiceWorker).state === "activated") {
+            resolve();
+          }
+        });
+      });
+    } else if (registration.waiting) {
+      await new Promise<void>((resolve) => {
+        registration.waiting!.addEventListener("statechange", (e) => {
+          if ((e.target as ServiceWorker).state === "activated") {
+            resolve();
+          }
+        });
+      });
+    }
+    // If already active, proceed immediately
 
     const token = await getToken(messagingInstance, {
       vapidKey: VAPID_KEY,

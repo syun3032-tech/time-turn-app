@@ -1,4 +1,3 @@
-[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
  ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
  We detected multiple lockfiles and selected the directory of /Users/matsumotoshuntasuku/TimeTurn 11:17/package-lock.json as the root directory.
  To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
@@ -6,12 +5,160 @@
  Detected additional lockfiles: 
    * /Users/matsumotoshuntasuku/TimeTurn 11:17/time-turn-app/package-lock.json
 
-   ▲ Next.js 16.0.3 (Turbopack)
-   - Local:         http://127.0.0.1:3000
-   - Network:       http://127.0.0.1:3000
+   ▲ Next.js 16.0.7 (Turbopack)
+   - Local:         http://localhost:3000
+   - Network:       http://172.19.2.52:3000
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 704ms
- GET / 307 in 2.5s (compile: 2.2s, render: 367ms)
- GET /login 200 in 549ms (compile: 487ms, render: 62ms)
+ ✓ Ready in 1694ms
+ GET / 307 in 3.3s (compile: 2.9s, render: 486ms)
+ GET / 307 in 87ms (compile: 14ms, render: 73ms)
+ GET /login 200 in 970ms (compile: 863ms, render: 107ms)
+ GET /dashboard 200 in 549ms (compile: 515ms, render: 34ms)
+ GET /dashboard 200 in 26ms (compile: 4ms, render: 22ms)
+Gemini API error response: {
+  "error": {
+    "code": 503,
+    "message": "The service is currently unavailable.",
+    "status": "UNAVAILABLE"
+  }
+}
+
+ POST /api/chat 503 in 1719ms (compile: 496ms, render: 1223ms)
+ GET /tasks 200 in 1100ms (compile: 1069ms, render: 31ms)
+ GET /dashboard 200 in 19ms (compile: 5ms, render: 15ms)
+ GET /tasks 200 in 24ms (compile: 3ms, render: 21ms)
+ GET /log 200 in 449ms (compile: 419ms, render: 29ms)
+ GET /profile 200 in 338ms (compile: 318ms, render: 20ms)
+ GET /tasks 200 in 21ms (compile: 6ms, render: 15ms)
+ GET /dashboard 200 in 24ms (compile: 9ms, render: 15ms)
+ GET /tasks 200 in 31ms (compile: 8ms, render: 23ms)
+ ✓ Compiled in 283ms
+ GET /tasks 200 in 692ms (compile: 185ms, render: 507ms)
+ GET /tasks 200 in 49ms (compile: 5ms, render: 44ms)
+ GET /tasks 200 in 44ms (compile: 5ms, render: 40ms)
+ GET /dashboard 200 in 23ms (compile: 5ms, render: 19ms)
+ ✓ Compiled in 140ms
+ GET /dashboard 200 in 649ms (compile: 165ms, render: 484ms)
+ ✓ Compiled in 131ms
+ GET /dashboard 200 in 610ms (compile: 145ms, render: 465ms)
+ ✓ Compiled in 241ms
+ GET /dashboard 200 in 646ms (compile: 171ms, render: 474ms)
+ GET /dashboard 200 in 95ms (compile: 12ms, render: 83ms)
+ ✓ Compiled in 120ms
+ GET /dashboard 200 in 649ms (compile: 141ms, render: 508ms)
+ ✓ Compiled in 116ms
+ GET /dashboard 200 in 649ms (compile: 178ms, render: 471ms)
+ ✓ Compiled in 96ms
+ GET /dashboard 200 in 581ms (compile: 142ms, render: 439ms)
+ GET /dashboard 200 in 50ms (compile: 8ms, render: 43ms)
+ ✓ Compiled in 84ms
+ GET /dashboard 200 in 602ms (compile: 147ms, render: 456ms)
+ ✓ Compiled in 315ms
+ ✓ Compiled in 264ms
+ ✓ Compiled in 68ms
+ GET /tasks 200 in 52ms (compile: 13ms, render: 39ms)
+ GET /log 200 in 22ms (compile: 6ms, render: 16ms)
+ GET /profile 200 in 21ms (compile: 5ms, render: 15ms)
+ GET /dashboard 200 in 160ms (compile: 106ms, render: 54ms)
+ ✓ Compiled in 270ms
+ ✓ Compiled in 87ms
+ GET /tasks 200 in 132ms (compile: 45ms, render: 87ms)
+ GET /log 200 in 30ms (compile: 7ms, render: 23ms)
+ GET /profile 200 in 30ms (compile: 9ms, render: 21ms)
+ GET /log 200 in 20ms (compile: 3ms, render: 17ms)
+ GET / 307 in 453ms (compile: 115ms, render: 338ms)
+ GET /login 200 in 170ms (compile: 25ms, render: 145ms)
+ GET / 307 in 180ms (compile: 28ms, render: 152ms)
+ GET /login 200 in 52ms (compile: 6ms, render: 46ms)
+ GET /dashboard 200 in 267ms (compile: 146ms, render: 121ms)
+ GET /dashboard 200 in 43ms (compile: 3ms, render: 40ms)
+ ✓ Compiled in 328ms
+   Reload env: .env.local
+ GET /dashboard 200 in 1499ms (compile: 1341ms, render: 158ms)
+ GET /log 200 in 1454ms (compile: 1056ms, render: 398ms)
+ ✓ Compiled in 1ms
+ GET /dashboard 200 in 631ms (compile: 46ms, render: 585ms)
+ GET /tasks 200 in 90ms (compile: 34ms, render: 56ms)
+ GET /log 200 in 17ms (compile: 4ms, render: 13ms)
+ GET /profile 200 in 65ms (compile: 21ms, render: 44ms)
+ GET /dashboard 200 in 18ms (compile: 5ms, render: 13ms)
+ ✓ Compiled in 150ms
+ ✓ Compiled in 84ms
+ ✓ Compiled in 284ms
+ GET /dashboard 200 in 853ms (compile: 253ms, render: 599ms)
+ GET /dashboard 200 in 288ms (compile: 9ms, render: 279ms)
+ GET /tasks 200 in 29ms (compile: 7ms, render: 23ms)
+ GET /log 200 in 27ms (compile: 8ms, render: 19ms)
+ GET /profile 200 in 25ms (compile: 7ms, render: 18ms)
+ GET /dashboard 200 in 24ms (compile: 5ms, render: 19ms)
+ GET /tasks 200 in 45ms (compile: 13ms, render: 32ms)
+ GET /dashboard 200 in 47ms (compile: 23ms, render: 24ms)
+ GET /log 200 in 22ms (compile: 4ms, render: 18ms)
+ GET /profile 200 in 22ms (compile: 5ms, render: 18ms)
+ GET /dashboard 200 in 22ms (compile: 2ms, render: 20ms)
+ GET /dashboard 200 in 126ms (compile: 19ms, render: 106ms)
+ ✓ Compiled in 82ms
+ GET /dashboard 200 in 761ms (compile: 183ms, render: 578ms)
+ ✓ Compiled in 86ms
+ ✓ Compiled in 236ms
+ GET /dashboard 200 in 848ms (compile: 191ms, render: 657ms)
+ ✓ Compiled in 94ms
+ ✓ Compiled in 69ms
+ ✓ Compiled in 418ms
+ GET /dashboard 200 in 686ms (compile: 161ms, render: 524ms)
+ GET /tasks 200 in 80ms (compile: 25ms, render: 54ms)
+ GET /log 200 in 39ms (compile: 9ms, render: 30ms)
+ GET /profile 200 in 53ms (compile: 5ms, render: 48ms)
+ GET /dashboard 200 in 22ms (compile: 5ms, render: 17ms)
+ ✓ Compiled in 139ms
+ ✓ Compiled in 68ms
+ GET /dashboard 200 in 680ms (compile: 188ms, render: 492ms)
+ ✓ Compiled in 184ms
+ ✓ Compiled in 109ms
+ ✓ Compiled in 99ms
+ ✓ Compiled in 84ms
+ ✓ Compiled in 68ms
+ GET /dashboard 200 in 839ms (compile: 189ms, render: 651ms)
+ ✓ Compiled in 143ms
+ ✓ Compiled in 54ms
+ ✓ Compiled in 95ms
+ GET /dashboard 200 in 622ms (compile: 129ms, render: 493ms)
+ ✓ Compiled in 100ms
+ ✓ Compiled in 133ms
+ ✓ Compiled in 133ms
+ ✓ Compiled in 115ms
+ ✓ Compiled in 109ms
+ ✓ Compiled in 55ms
+ GET /dashboard 200 in 819ms (compile: 200ms, render: 619ms)
+ GET /tasks 200 in 242ms (compile: 189ms, render: 53ms)
+ GET /log 200 in 135ms (compile: 89ms, render: 46ms)
+ GET /profile 200 in 151ms (compile: 91ms, render: 60ms)
+ GET /dashboard 200 in 21ms (compile: 6ms, render: 15ms)
+ ✓ Compiled in 119ms
+ GET /dashboard 200 in 787ms (compile: 169ms, render: 619ms)
+ ✓ Compiled in 201ms
+ ✓ Compiled in 96ms
+ ✓ Compiled in 130ms
+ ✓ Compiled in 153ms
+ GET /dashboard 200 in 841ms (compile: 214ms, render: 628ms)
+ ✓ Compiled in 67ms
+ ✓ Compiled in 94ms
+ ✓ Compiled in 91ms
+ ✓ Compiled in 130ms
+ ✓ Compiled in 54ms
+ GET /dashboard 200 in 1209ms (compile: 343ms, render: 865ms)
+ GET /dashboard 200 in 70ms (compile: 15ms, render: 54ms)
+ GET /tasks 200 in 248ms (compile: 178ms, render: 71ms)
+ GET /dashboard 200 in 17ms (compile: 3ms, render: 13ms)
+ GET /tasks 200 in 246ms (compile: 23ms, render: 223ms)
+ GET /log 200 in 202ms (compile: 126ms, render: 76ms)
+ GET /tasks 200 in 23ms (compile: 7ms, render: 16ms)
+ ✓ Compiled in 375ms
+ ✓ Compiled in 204ms
+ ✓ Compiled in 62ms
+ ✓ Compiled in 261ms
+ GET /log 200 in 66ms (compile: 21ms, render: 45ms)
+ GET /dashboard 200 in 224ms (compile: 140ms, render: 84ms)
+ GET /tasks 200 in 26ms (compile: 5ms, render: 21ms)

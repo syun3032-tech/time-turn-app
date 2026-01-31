@@ -22,6 +22,15 @@ export const OVERDUE_TASK_MESSAGES = [
   "やばい、{taskTitle}の締め切り過ぎてる！",
 ];
 
+// 停滞タスクメッセージ（しばらく更新がない場合）
+export const STALLED_TASK_MESSAGES = [
+  "最近タスクの更新がないけど、調子どう？",
+  "{taskTitle}のこと、どうなってる？",
+  "ちょっと進捗確認させて〜！",
+  "止まってるタスクがあるみたい。手伝おうか？",
+  "何か困ってることある？相談のるよ！",
+];
+
 // キャラクター呼びかけメッセージ（時間帯別）
 export const CHARACTER_CALL_MESSAGES = {
   morning: [

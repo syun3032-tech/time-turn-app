@@ -28,7 +28,8 @@ import type {
   Conversation,
   ConversationMessage,
   HearingProgress,
-  HearingSummary
+  HearingSummary,
+  UserKnowledge
 } from './firestore-types'
 
 // Timestamp変換ヘルパー
@@ -677,4 +678,97 @@ export async function linkConversationToGoal(
     goalId,
     updatedAt: serverTimestamp(),
   })
+}
+
+// ============================================
+// User Knowledge（ユーザー理解のためのナレッジ）
+// ============================================
+
+/**
+ * ユーザーナレッジを取得
+ */
+export async function getUserKnowledge(userId: string): Promise<UserKnowledge | null> {
+  const docRef = doc(db, 'userKnowledge', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) return null
+
+  const data = docSnap.data()
+  return {
+    userId,
+    interests: data.interests || [],
+    experiences: data.experiences || [],
+    personality: data.personality || [],
+    challenges: data.challenges || [],
+    goals: data.goals || [],
+    context: data.context || [],
+    updatedAt: toDate(data.updatedAt),
+  }
+}
+
+/**
+ * ユーザーナレッジを更新（マージ）
+ * 新しい情報を既存の情報にマージする
+ */
+export async function updateUserKnowledge(
+  userId: string,
+  newKnowledge: Partial<Omit<UserKnowledge, 'userId' | 'updatedAt'>>
+): Promise<void> {
+  const docRef = doc(db, 'userKnowledge', userId)
+  const existing = await getUserKnowledge(userId)
+
+  // 既存の情報とマージ（重複を除去）
+  const mergeArrays = (existing: string[], newItems: string[]): string[] => {
+    const combined = [...existing, ...newItems]
+    // 重複を除去し、最新の10件に制限
+    return [...new Set(combined)].slice(-10)
+  }
+
+  const mergedData = {
+    interests: mergeArrays(existing?.interests || [], newKnowledge.interests || []),
+    experiences: mergeArrays(existing?.experiences || [], newKnowledge.experiences || []),
+    personality: mergeArrays(existing?.personality || [], newKnowledge.personality || []),
+    challenges: mergeArrays(existing?.challenges || [], newKnowledge.challenges || []),
+    goals: mergeArrays(existing?.goals || [], newKnowledge.goals || []),
+    context: mergeArrays(existing?.context || [], newKnowledge.context || []),
+    updatedAt: serverTimestamp(),
+  }
+
+  await setDoc(docRef, mergedData, { merge: true })
+}
+
+/**
+ * ユーザーナレッジをプロンプト用に整形
+ */
+export function formatKnowledgeForPrompt(knowledge: UserKnowledge | null): string {
+  if (!knowledge) return ''
+
+  const sections: string[] = []
+
+  if (knowledge.interests.length > 0) {
+    sections.push(`興味・関心: ${knowledge.interests.join('、')}`)
+  }
+  if (knowledge.experiences.length > 0) {
+    sections.push(`経験・スキル: ${knowledge.experiences.join('、')}`)
+  }
+  if (knowledge.personality.length > 0) {
+    sections.push(`性格・特性: ${knowledge.personality.join('、')}`)
+  }
+  if (knowledge.challenges.length > 0) {
+    sections.push(`課題・苦手: ${knowledge.challenges.join('、')}`)
+  }
+  if (knowledge.goals.length > 0) {
+    sections.push(`将来の目標: ${knowledge.goals.join('、')}`)
+  }
+  if (knowledge.context.length > 0) {
+    sections.push(`背景: ${knowledge.context.join('、')}`)
+  }
+
+  if (sections.length === 0) return ''
+
+  return `
+【ユーザーについて知っていること】
+${sections.join('\n')}
+※この情報を踏まえて、パーソナライズされた会話をしてください。
+`
 }

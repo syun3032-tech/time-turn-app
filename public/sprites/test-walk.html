@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>歩きアニメーション テスト</title>
+  <style>
+    body {
+      background: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: sans-serif;
+    }
+
+    h1 {
+      color: white;
+      margin-bottom: 40px;
+    }
+
+    .container {
+      display: flex;
+      gap: 60px;
+      align-items: flex-end;
+    }
+
+    .demo {
+      text-align: center;
+    }
+
+    .demo-label {
+      color: white;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    /* スプライトアニメーション */
+    .character {
+      width: 80px;
+      height: 142px;
+      background: url('./walk-sprite.png') 0 0 no-repeat;
+      animation: walk 4s steps(12) infinite;
+      transform: scaleX(-1); /* 左右反転して右向きに */
+    }
+
+    @keyframes walk {
+      from { background-position: -960px 0; }
+      to { background-position: 0 0; }
+    }
+
+    /* 歩いて移動するバージョン */
+    .walking-stage {
+      width: 400px;
+      height: 160px;
+      background: #555;
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .character-moving {
+      width: 80px;
+      height: 142px;
+      background: url('./walk-sprite.png') 0 0 no-repeat;
+      animation:
+        walk 4s steps(12) infinite,
+        move 12s linear infinite;
+      position: absolute;
+      bottom: 10px;
+      transform: scaleX(-1); /* 左右反転して右向きに */
+    }
+
+    @keyframes move {
+      from { left: -80px; }
+      to { left: 400px; }
+    }
+
+    /* 速度調整ボタン */
+    .controls {
+      margin-top: 40px;
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #4fd1c5;
+      color: white;
+    }
+
+    button:hover {
+      background: #38b2ac;
+    }
+  </style>
+</head>
+<body>
+  <h1>秘書ちゃん 歩きアニメーション</h1>
+
+  <div class="container">
+    <div class="demo">
+      <div class="demo-label">その場で歩く</div>
+      <div class="character" id="staticWalk"></div>
+    </div>
+
+    <div class="demo">
+      <div class="demo-label">移動しながら歩く</div>
+      <div class="walking-stage">
+        <div class="character-moving" id="movingWalk"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button onclick="setSpeed(2.0)">速い (2s)</button>
+    <button onclick="setSpeed(3.0)">普通 (3s)</button>
+    <button onclick="setSpeed(4.0)">遅い (4s)</button>
+  </div>
+
+  <script>
+    function setSpeed(duration) {
+      document.getElementById('staticWalk').style.animationDuration = duration + 's';
+      document.getElementById('movingWalk').style.animationDuration = duration + 's, 10s';
+    }
+  </script>
+</body>
+</html>
