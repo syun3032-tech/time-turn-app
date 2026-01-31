@@ -20,6 +20,7 @@ interface CharacterAvatarProps {
   width?: string;
   height?: string;
   className?: string;
+  variant?: "card" | "bare"; // card: カード風（モバイル用）, bare: 枠なし（PC背景用）
 }
 
 export function CharacterAvatar({
@@ -27,18 +28,21 @@ export function CharacterAvatar({
   width = "280px",
   height = "420px",
   className,
+  variant = "card",
 }: CharacterAvatarProps) {
+  const isCard = variant === "card";
+
   return (
     <Box
       position="relative"
       w={width}
       h={height}
-      bg="white"
-      borderRadius="20px"
+      bg={isCard ? "white" : "transparent"}
+      borderRadius={isCard ? "20px" : "0"}
       overflow="hidden"
-      boxShadow="0 8px 24px rgba(0,0,0,0.12)"
-      border="4px solid"
-      borderColor="gray.100"
+      boxShadow={isCard ? "0 8px 24px rgba(0,0,0,0.12)" : "none"}
+      border={isCard ? "4px solid" : "none"}
+      borderColor={isCard ? "gray.100" : "transparent"}
       className={className}
     >
       <Image

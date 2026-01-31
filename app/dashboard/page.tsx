@@ -1425,6 +1425,7 @@ export default function DashboardPage() {
             expression={characterExpression}
             width="420px"
             height="630px"
+            variant="bare"
           />
         </Box>
 
