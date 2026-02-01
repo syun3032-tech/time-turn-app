@@ -30,19 +30,39 @@ export function CharacterAvatar({
   className,
   variant = "card",
 }: CharacterAvatarProps) {
-  const isCard = variant === "card";
+  // bareモード: 完全に透明、枠なし
+  if (variant === "bare") {
+    return (
+      <Box
+        position="relative"
+        w={width}
+        h={height}
+        className={className}
+      >
+        <Image
+          src={EXPRESSION_IMAGES[expression]}
+          alt="秘書ちゃん"
+          objectFit="contain"
+          w="100%"
+          h="100%"
+          transition="opacity 0.2s ease-in-out"
+        />
+      </Box>
+    );
+  }
 
+  // cardモード: カード風デザイン
   return (
     <Box
       position="relative"
       w={width}
       h={height}
-      bg={isCard ? "white" : "transparent"}
-      borderRadius={isCard ? "20px" : "0"}
+      bg="white"
+      borderRadius="20px"
       overflow="hidden"
-      boxShadow={isCard ? "0 8px 24px rgba(0,0,0,0.12)" : "none"}
-      border={isCard ? "4px solid" : "none"}
-      borderColor={isCard ? "gray.100" : "transparent"}
+      boxShadow="0 8px 24px rgba(0,0,0,0.12)"
+      border="4px solid"
+      borderColor="gray.100"
       className={className}
     >
       <Image

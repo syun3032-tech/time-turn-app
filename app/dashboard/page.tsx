@@ -1270,11 +1270,14 @@ export default function DashboardPage() {
           alignItems="center"
           minH="520px"
         >
-          <CharacterAvatar
-            expression={characterExpression}
-            width="280px"
-            height="420px"
-          />
+          <Box ml={4}>
+            <CharacterAvatar
+              expression={characterExpression}
+              width="330px"
+              height="495px"
+              variant="bare"
+            />
+          </Box>
 
           {/* 吹き出し */}
           <Box
@@ -1286,7 +1289,7 @@ export default function DashboardPage() {
             border="1px solid"
             borderColor="gray.200"
             position={isBubbleExpanded ? "fixed" : "absolute"}
-            top={isBubbleExpanded ? "50%" : "360px"}
+            top={isBubbleExpanded ? "50%" : "400px"}
             left={isBubbleExpanded ? "50%" : "auto"}
             transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
             maxW={isBubbleExpanded ? "90vw" : "340px"}
@@ -1422,8 +1425,8 @@ export default function DashboardPage() {
         >
           <CharacterAvatar
             expression={characterExpression}
-            width="320px"
-            height="480px"
+            width="450px"
+            height="675px"
             variant="bare"
           />
         </Box>
@@ -1437,7 +1440,7 @@ export default function DashboardPage() {
           alignItems="center"
           justifyContent="center"
           minH="calc(100vh - 128px)"
-          pl={{ md: "380px", lg: "400px" }}
+          pl={{ md: "480px", lg: "520px" }}
           pr={8}
         >
           <VStack gap={6} maxW="600px" w="100%">
