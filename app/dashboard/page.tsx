@@ -1473,11 +1473,12 @@ export default function DashboardPage() {
           <Box
             flexShrink={0}
             alignSelf="center"
+            ml="-100px"
           >
             <CharacterAvatar
               expression={characterExpression}
-              width="480px"
-              height="720px"
+              width="550px"
+              height="825px"
               variant="bare"
             />
           </Box>
