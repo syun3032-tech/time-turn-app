@@ -11,9 +11,10 @@ import {
   Image,
   Button,
 } from "@chakra-ui/react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { FiSend, FiX, FiPlus, FiTrash2 } from "react-icons/fi";
 import { chatWithAISeamless } from "@/lib/ai-service";
+import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getConversations,
@@ -387,6 +388,19 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // 最新のアシスタントメッセージを取得
+  const latestAssistantMessage = useMemo(() => {
+    const assistantMessages = messages.filter(m => m.role === "assistant");
+    return assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : "";
+  }, [messages]);
+
+  // タイピングアニメーション（最新のアシスタントメッセージのみ）
+  const { displayedText: typedLatestMessage, isTyping } = useTypingAnimation(latestAssistantMessage, {
+    speed: 25,
+    enabled: !isLoading,
+  });
 
   // 会話履歴を読み込む
   const loadConversations = async () => {
@@ -449,10 +463,17 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
     setMessages([{ role: "assistant", content: greeting }]);
   }, [isLoadingHistory, taskTree, conversationId, messages.length]);
 
-  // 自動スクロール
+  // 自動スクロール（メッセージ追加時 + タイピング中）
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // タイピング中も自動スクロール
+  useEffect(() => {
+    if (isTyping && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [typedLatestMessage, isTyping]);
 
   // 会話選択
   const handleSelectConversation = async (convId: string) => {
@@ -949,7 +970,12 @@ ${CONTEXT_PROMPT}${taskInfo}
       {showHistoryPicker && <HistoryPickerBubble />}
 
       {/* 通常のメッセージ */}
-      {!showHistoryPicker && messages.map((msg, idx) => (
+      {!showHistoryPicker && messages.map((msg, idx) => {
+        // 最新のアシスタントメッセージかどうかを判定
+        const isLatestAssistant = msg.role === "assistant" &&
+          idx === messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i >= 0).pop();
+
+        return (
         <Box
           key={idx}
           alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
@@ -965,7 +991,10 @@ ${CONTEXT_PROMPT}${taskInfo}
                 fontSize="sm"
                 color={msg.role === "user" ? "white" : "gray.800"}
               >
-                {msg.content}
+                {isLatestAssistant ? typedLatestMessage : msg.content}
+                {isLatestAssistant && isTyping && (
+                  <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
+                )}
               </Text>
               {/* 複数アクション確認UI */}
               {msg.actions && msg.actions.length > 0 && msg.actionsConfirmed === undefined && (
@@ -1055,7 +1084,7 @@ ${CONTEXT_PROMPT}${taskInfo}
             </Card.Body>
           </Card.Root>
         </Box>
-      ))}
+      );})}
       {isLoading && (
         <Box alignSelf="flex-start" maxW="85%">
           <Card.Root bg="white" shadow="sm" borderRadius="xl">
@@ -1170,7 +1199,7 @@ ${CONTEXT_PROMPT}${taskInfo}
         </Box>
 
         {/* メッセージエリア */}
-        <Box flex={1} overflowY="auto" p={4} bg="gray.50">
+        <Box ref={messagesContainerRef} flex={1} overflowY="auto" p={4} bg="gray.50">
           <MessageList />
         </Box>
 
@@ -1278,6 +1307,7 @@ ${CONTEXT_PROMPT}${taskInfo}
 
         {/* メッセージエリア */}
         <Box
+          ref={messagesContainerRef}
           flex={1}
           overflowY="auto"
           p={4}
