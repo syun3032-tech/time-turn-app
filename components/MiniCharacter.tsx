@@ -1,8 +1,11 @@
 "use client";
 
 import { Box } from "@chakra-ui/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { MiniCharacterChat } from "./MiniCharacterChat";
+
+const STORAGE_KEY = "miniCharacterPosition";
+const LONG_PRESS_DURATION = 500; // 長押し判定時間（ms）
 
 interface MiniCharacterProps {
   onChatOpenChange?: (isOpen: boolean) => void;
@@ -15,8 +18,13 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   const [position, setPosition] = useState({ x: 30, y: 150 });
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isGrabbed, setIsGrabbed] = useState(false); // 長押しでつかんだ状態
+  const [isManuallyPositioned, setIsManuallyPositioned] = useState(false);
   const animationRef = useRef<number | null>(null);
   const targetRef = useRef({ x: 30, y: 150 });
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
 
   // チャット開閉時に親に通知
   const handleChatOpen = () => {
@@ -64,14 +72,147 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     };
   };
 
-  // 初期位置を画面サイズに合わせて設定
+  // 初期位置をlocalStorageから読み込み、なければ画面サイズに合わせて設定
   useEffect(() => {
     const bounds = getSafeBounds();
+
+    // localStorageから保存位置を読み込み
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const savedPos = JSON.parse(saved);
+        // 保存位置が有効な範囲内かチェック
+        const validX = Math.min(Math.max(savedPos.x, bounds.minX), bounds.maxX);
+        const validY = Math.min(Math.max(savedPos.y, bounds.minY), bounds.maxY);
+        setPosition({ x: validX, y: validY });
+        targetRef.current = { x: validX, y: validY };
+        setIsManuallyPositioned(true);
+        return;
+      }
+    } catch (e) {
+      console.error("Failed to load saved position:", e);
+    }
+
     const initialX = Math.min(bounds.maxX / 2, 100);
     const initialY = Math.min(bounds.maxY / 2, 200);
     setPosition({ x: initialX, y: initialY });
     targetRef.current = { x: initialX, y: initialY };
   }, []);
+
+  // 位置をlocalStorageに保存
+  const savePosition = useCallback((x: number, y: number) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ x, y }));
+    } catch (e) {
+      console.error("Failed to save position:", e);
+    }
+  }, []);
+
+  // ドラッグ開始（長押し後）
+  const handleDragStart = useCallback((clientX: number, clientY: number) => {
+    setIsDragging(true);
+    dragOffsetRef.current = {
+      x: clientX - position.x,
+      y: clientY - position.y,
+    };
+  }, [position]);
+
+  // ドラッグ中
+  const handleDragMove = useCallback((clientX: number, clientY: number) => {
+    if (!isDragging) return;
+
+    const bounds = getSafeBounds();
+    const newX = Math.min(Math.max(clientX - dragOffsetRef.current.x, bounds.minX), bounds.maxX);
+    const newY = Math.min(Math.max(clientY - dragOffsetRef.current.y, bounds.minY), bounds.maxY);
+
+    setPosition({ x: newX, y: newY });
+    targetRef.current = { x: newX, y: newY };
+  }, [isDragging]);
+
+  // ドラッグ終了
+  const handleDragEnd = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      setIsGrabbed(false);
+      setIsManuallyPositioned(true);
+      savePosition(position.x, position.y);
+    }
+  }, [isDragging, position, savePosition]);
+
+  // 長押し開始
+  const handlePressStart = useCallback((clientX: number, clientY: number) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setIsGrabbed(true);
+      handleDragStart(clientX, clientY);
+    }, LONG_PRESS_DURATION);
+  }, [handleDragStart]);
+
+  // 長押しキャンセル
+  const handlePressCancel = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  // タッチイベント
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    handlePressStart(touch.clientX, touch.clientY);
+  }, [handlePressStart]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (isDragging) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleDragMove(touch.clientX, touch.clientY);
+    } else {
+      // 長押し中に動いたらキャンセル
+      handlePressCancel();
+    }
+  }, [isDragging, handleDragMove, handlePressCancel]);
+
+  const handleTouchEnd = useCallback(() => {
+    handlePressCancel();
+    handleDragEnd();
+  }, [handlePressCancel, handleDragEnd]);
+
+  // マウスイベント
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    handlePressStart(e.clientX, e.clientY);
+  }, [handlePressStart]);
+
+  // グローバルマウスイベント（ドラッグ中）
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      handleDragMove(e.clientX, e.clientY);
+    };
+
+    const handleMouseUp = () => {
+      handlePressCancel();
+      handleDragEnd();
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, handleDragMove, handleDragEnd, handlePressCancel]);
+
+  // 自動移動をリセット（ダブルタップで）
+  const handleDoubleClick = useCallback(() => {
+    if (isManuallyPositioned) {
+      setIsManuallyPositioned(false);
+      localStorage.removeItem(STORAGE_KEY);
+      pickNewTarget();
+    }
+  }, [isManuallyPositioned]);
 
   // 壁に当たったら跳ね返るターゲットを設定
   const bounceFromWall = (hitX: boolean, hitY: boolean, currentX: number, currentY: number) => {
@@ -115,8 +256,13 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     };
   };
 
-  // アニメーションループ
+  // アニメーションループ（手動配置またはドラッグ中は停止）
   useEffect(() => {
+    // 手動配置中またはドラッグ中は自動移動しない
+    if (isManuallyPositioned || isDragging) {
+      return;
+    }
+
     const speed = 0.5; // ピクセル/フレーム
     let lastTime = 0;
 
@@ -188,7 +334,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, []);
+  }, [isManuallyPositioned, isDragging]);
 
   // ウィンドウリサイズ時に位置を調整
   useEffect(() => {
@@ -204,6 +350,13 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // クリック処理（ドラッグ中でなければチャットを開く）
+  const handleClick = useCallback(() => {
+    if (!isDragging && !isGrabbed) {
+      handleChatOpen();
+    }
+  }, [isDragging, isGrabbed, handleChatOpen]);
+
   return (
     <>
       <Box
@@ -213,9 +366,20 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
         width="80px"
         height="142px"
         zIndex={900}
-        cursor="pointer"
-        onClick={handleChatOpen}
+        cursor={isGrabbed ? "grabbing" : "pointer"}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         className={`mini-character ${direction === "right" ? "face-right" : "face-left"}`}
+        style={{
+          transform: isGrabbed ? "scale(1.1)" : "scale(1)",
+          transition: isDragging ? "none" : "transform 0.2s ease",
+          filter: isGrabbed ? "drop-shadow(0 4px 8px rgba(0,0,0,0.3))" : "none",
+          touchAction: "none", // タッチ操作のスクロール防止
+        }}
       />
       <MiniCharacterChat
         isOpen={isChatOpen}
