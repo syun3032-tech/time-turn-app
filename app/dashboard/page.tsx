@@ -1457,34 +1457,32 @@ export default function DashboardPage() {
         position="relative"
         minH="calc(100vh - 128px)"
       >
-        {/* 背面: キャラクター（絶対配置で左下固定） */}
-        <Box
-          position="fixed"
-          left="40px"
-          bottom="80px"
-          zIndex={1}
-          pointerEvents="none"
-        >
-          <CharacterAvatar
-            expression={characterExpression}
-            width="450px"
-            height="675px"
-            variant="bare"
-          />
-        </Box>
-
-        {/* 前面: 吹き出し + 入力欄（中央配置） */}
+        {/* キャラクター + 吹き出し + 入力欄（横並び） */}
         <Box
           position="relative"
           zIndex={10}
           display="flex"
-          flexDirection="column"
+          flexDirection="row"
           alignItems="center"
           justifyContent="center"
           minH="calc(100vh - 128px)"
-          pl={{ md: "480px", lg: "520px" }}
-          pr={8}
+          px={8}
+          gap={4}
         >
+          {/* キャラクター（吹き出しの左側） */}
+          <Box
+            flexShrink={0}
+            alignSelf="flex-end"
+            mb="80px"
+          >
+            <CharacterAvatar
+              expression={characterExpression}
+              width="350px"
+              height="525px"
+              variant="bare"
+            />
+          </Box>
+          {/* 吹き出し + 入力欄 */}
           <VStack gap={6} maxW="600px" w="100%">
           {/* ヒアリング進捗インジケーター - PC版 */}
           {taskBreakdownStage === "hearing" && (
