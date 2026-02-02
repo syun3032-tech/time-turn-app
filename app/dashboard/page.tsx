@@ -1320,6 +1320,7 @@ export default function DashboardPage() {
           flex={1}
           minH={0}
           justifyContent="center"
+          mt="-15px"
         >
           {/* キャラクター */}
           <Box position="relative" ml={4}>
