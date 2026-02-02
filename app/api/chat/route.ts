@@ -158,7 +158,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      const durationMs = Date.now() - startedAt;
+      log("error", { traceId, event: "json_parse_error", durationMs, message: parseError instanceof Error ? parseError.message : "Unknown parse error" });
+      return NextResponse.json(
+        { success: false, error: "APIレスポンスの解析に失敗しました", traceId },
+        { status: 500 }
+      );
+    }
 
     if (!data.candidates || data.candidates.length === 0) {
       const durationMs = Date.now() - startedAt;

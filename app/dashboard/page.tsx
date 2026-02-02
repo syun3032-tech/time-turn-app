@@ -1041,11 +1041,17 @@ export default function DashboardPage() {
         // 通常モードで250文字超えたら要約を依頼
         if (taskBreakdownStage === "normal" && response.content.length > 250) {
           console.log(`Response too long (${response.content.length} chars), requesting summary...`);
-          const summaryResponse = await chatWithAISeamless([
-            { role: "user", content: `以下の文章を100文字以内で要約して、敬語で1〜2文にまとめて：\n\n${response.content}` }
-          ], provider);
-          if (summaryResponse.success && summaryResponse.content) {
-            finalContent = summaryResponse.content;
+          try {
+            const summaryResponse = await chatWithAISeamless([
+              { role: "user", content: `以下の文章を100文字以内で要約して、敬語で1〜2文にまとめて：\n\n${response.content}` }
+            ], provider);
+            if (summaryResponse.success && summaryResponse.content) {
+              finalContent = summaryResponse.content;
+            }
+            // 要約失敗時は元のコンテンツをそのまま使う
+          } catch (summaryError) {
+            console.error("Summary request failed, using original content:", summaryError);
+            // 元のコンテンツをそのまま使用
           }
         }
 
@@ -1110,16 +1116,35 @@ export default function DashboardPage() {
           errorMsg.includes("exceeded") ||
           errorMsg.includes("resource");
 
+        const isTimeoutError =
+          errorMsg.includes("timeout") ||
+          errorMsg.includes("タイムアウト") ||
+          errorMsg.includes("abort");
+
+        let errorMessage = "ごめんね、エラーが起きちゃった...";
         if (isRateLimitError) {
-          setCharacterMessage("現在βテスト版のため、しばらく時間を空けてから操作してください。");
-        } else {
-          setCharacterMessage("ごめんね、エラーが起きちゃった...");
+          errorMessage = "現在βテスト版のため、しばらく時間を空けてから操作してください。";
+        } else if (isTimeoutError) {
+          errorMessage = "応答に時間がかかりすぎちゃった...もう一度試してみてね。";
+        } else if (response.error) {
+          // 具体的なエラー内容を表示
+          errorMessage = `エラーが発生しました: ${response.error}`;
         }
+
+        // チャットにエラーメッセージを追加
+        const errorChatMessage: Message = {
+          role: "assistant",
+          content: errorMessage
+        };
+        setMessages(prev => [...prev, errorChatMessage]);
+        setCharacterMessage(errorMessage);
         setCharacterExpression("normal");
       }
     } catch (error) {
       console.error("Failed to send message:", error);
       const errorStr = error instanceof Error ? error.message.toLowerCase() : "";
+      const errorDetail = error instanceof Error ? error.message : "Unknown error";
+
       const isRateLimitError =
         errorStr.includes("429") ||
         errorStr.includes("rate") ||
@@ -1128,11 +1153,27 @@ export default function DashboardPage() {
         errorStr.includes("exceeded") ||
         errorStr.includes("resource");
 
+      const isTimeoutError =
+        errorStr.includes("timeout") ||
+        errorStr.includes("abort") ||
+        (error instanceof Error && error.name === "AbortError");
+
+      let errorMessage = "ごめんね、エラーが起きちゃった...";
       if (isRateLimitError) {
-        setCharacterMessage("現在βテスト版のため、しばらく時間を空けてから操作してください。");
+        errorMessage = "現在βテスト版のため、しばらく時間を空けてから操作してください。";
+      } else if (isTimeoutError) {
+        errorMessage = "応答に時間がかかりすぎちゃった...もう一度試してみてね。";
       } else {
-        setCharacterMessage("ごめんね、エラーが起きちゃった...");
+        errorMessage = `エラーが発生しました: ${errorDetail}`;
       }
+
+      // チャットにエラーメッセージを追加
+      const errorChatMessage: Message = {
+        role: "assistant",
+        content: errorMessage
+      };
+      setMessages(prev => [...prev, errorChatMessage]);
+      setCharacterMessage(errorMessage);
       setCharacterExpression("normal");
     } finally {
       setIsLoading(false);

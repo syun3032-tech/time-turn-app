@@ -14,8 +14,8 @@ export type AIProvider = "openai" | "anthropic" | "gemini";
 // APIキーのモード（コスト管理のため）
 export type APIKeyMode = "chat" | "task_breakdown";
 
-// クライアント側タイムアウト（サーバー側より少し長め）
-const CLIENT_TIMEOUT_MS = 20000; // 20秒
+// クライアント側タイムアウト（サーバー側と統一）
+const CLIENT_TIMEOUT_MS = 15000; // 15秒
 
 /**
  * タイムアウト付きfetch
