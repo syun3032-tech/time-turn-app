@@ -33,6 +33,7 @@ interface Message {
     nodeId?: string;
     memo?: string;
     confirmed?: boolean;
+    success?: boolean;
   };
 }
 
@@ -86,11 +87,21 @@ function getIncompleteTasks(tree: any[]): any[] {
   return tasks;
 }
 
-// ノードをIDまたはタイトルで検索
+// ノードをIDまたはタイトルで検索（部分一致、大文字小文字無視）
 function findNodeByIdOrTitle(tree: any[], search: string): any | null {
+  const searchLower = search.toLowerCase().trim();
   const traverse = (nodes: any[]): any | null => {
     for (const node of nodes) {
-      if (node.id === search || node.title.includes(search)) {
+      const titleLower = (node.title || "").toLowerCase();
+      // プレフィックス（Goal:, Task:など）を除去して比較
+      const titleWithoutPrefix = titleLower.replace(/^(goal:|project:|milestone:|task:)\s*/i, "");
+
+      if (
+        node.id === search ||
+        titleLower.includes(searchLower) ||
+        titleWithoutPrefix.includes(searchLower) ||
+        searchLower.includes(titleWithoutPrefix)
+      ) {
         return node;
       }
       if (node.children) {
@@ -234,18 +245,30 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
     const msg = messages[msgIndex];
     if (!msg.action) return;
 
+    let actionSuccess = false;
+
     if (confirm) {
-      if (msg.action.type === "add_task" && msg.action.parentId && msg.action.taskTitle && onAddTask) {
-        onAddTask(msg.action.parentId, msg.action.taskTitle);
-      } else if (msg.action.type === "add_memo" && msg.action.nodeId && msg.action.memo && onUpdateMemo) {
-        onUpdateMemo(msg.action.nodeId, msg.action.memo);
+      if (msg.action.type === "add_task" && msg.action.taskTitle && onAddTask) {
+        if (msg.action.parentId) {
+          onAddTask(msg.action.parentId, msg.action.taskTitle);
+          actionSuccess = true;
+        } else {
+          console.error("親ノードが見つかりませんでした:", msg.action.parentTitle);
+        }
+      } else if (msg.action.type === "add_memo" && msg.action.memo && onUpdateMemo) {
+        if (msg.action.nodeId) {
+          onUpdateMemo(msg.action.nodeId, msg.action.memo);
+          actionSuccess = true;
+        } else {
+          console.error("ノードが見つかりませんでした:", msg.action.parentTitle);
+        }
       }
     }
 
-    // メッセージを更新して確認済みにする
+    // メッセージを更新して確認済みにする（成功したかどうかも記録）
     setMessages(prev => prev.map((m, i) =>
       i === msgIndex
-        ? { ...m, action: { ...m.action!, confirmed: confirm } }
+        ? { ...m, action: { ...m.action!, confirmed: confirm, success: confirm ? actionSuccess : undefined } }
         : m
     ));
   };
@@ -476,8 +499,11 @@ ${CONTEXT_PROMPT}${taskInfo}
                         </HStack>
                       </VStack>
                     )}
-                    {msg.action && msg.action.confirmed === true && (
+                    {msg.action && msg.action.confirmed === true && msg.action.success === true && (
                       <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
+                    )}
+                    {msg.action && msg.action.confirmed === true && msg.action.success === false && (
+                      <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
                     )}
                     {msg.action && msg.action.confirmed === false && (
                       <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
@@ -648,8 +674,11 @@ ${CONTEXT_PROMPT}${taskInfo}
                         </HStack>
                       </VStack>
                     )}
-                    {msg.action && msg.action.confirmed === true && (
+                    {msg.action && msg.action.confirmed === true && msg.action.success === true && (
                       <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
+                    )}
+                    {msg.action && msg.action.confirmed === true && msg.action.success === false && (
+                      <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
                     )}
                     {msg.action && msg.action.confirmed === false && (
                       <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
