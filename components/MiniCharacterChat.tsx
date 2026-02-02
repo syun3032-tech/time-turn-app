@@ -854,9 +854,30 @@ ${CONTEXT_PROMPT}${taskInfo}
             <Text ml={2}>新しく話す</Text>
           </Button>
 
-          {/* 履歴一覧 */}
+          {/* 履歴一覧（3つまで表示、それ以上はスクロール） */}
           {conversations.length > 0 && (
-            <VStack gap={1} align="stretch" maxH="200px" overflowY="auto">
+            <VStack
+              gap={1}
+              align="stretch"
+              maxH="168px"
+              overflowY="auto"
+              css={{
+                "&::-webkit-scrollbar": {
+                  width: "4px",
+                },
+                "&::-webkit-scrollbar-track": {
+                  background: "#f1f1f1",
+                  borderRadius: "4px",
+                },
+                "&::-webkit-scrollbar-thumb": {
+                  background: "#ccc",
+                  borderRadius: "4px",
+                },
+                "&::-webkit-scrollbar-thumb:hover": {
+                  background: "#aaa",
+                },
+              }}
+            >
               {conversations.map((conv) => (
                 <HStack
                   key={conv.id}
