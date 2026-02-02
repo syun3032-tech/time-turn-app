@@ -8,6 +8,7 @@ import {
   Button,
   Input,
   IconButton,
+  Badge,
 } from "@chakra-ui/react";
 import { FiPlus, FiEdit2, FiCheck, FiX, FiTrash2 } from "react-icons/fi";
 import { useState } from "react";
@@ -182,14 +183,21 @@ export function ConversationSidebar({
                       }}
                     >
                       <VStack align="start" gap={0} flex={1}>
-                        <Text
-                          fontSize="sm"
-                          fontWeight={currentConversationId === conv.id ? "bold" : "normal"}
-                          color="gray.800"
-                          lineClamp={1}
-                        >
-                          {conv.title}
-                        </Text>
+                        <HStack gap={1}>
+                          <Text
+                            fontSize="sm"
+                            fontWeight={currentConversationId === conv.id ? "bold" : "normal"}
+                            color="gray.800"
+                            lineClamp={1}
+                          >
+                            {conv.title}
+                          </Text>
+                          {conv.source === 'mini' && (
+                            <Badge size="sm" colorPalette="purple" variant="subtle">
+                              ミニ
+                            </Badge>
+                          )}
+                        </HStack>
                         <Text fontSize="xs" color="gray.600">
                           {formatDate(conv.updatedAt)}
                         </Text>

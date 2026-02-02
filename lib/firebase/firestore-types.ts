@@ -168,6 +168,7 @@ export interface Conversation {
   title: string
   isCustomTitle: boolean  // ユーザーが編集したらtrue
   goalId?: string         // 紐づく目標（あれば）
+  source?: 'mini' | 'main'  // どこで作成された会話か（ミニ秘書 or メイン秘書）
   // ヒアリング状態の永続化
   taskBreakdownStage?: 'normal' | 'hearing' | 'proposal' | 'output'
   hearingProgress?: HearingProgress

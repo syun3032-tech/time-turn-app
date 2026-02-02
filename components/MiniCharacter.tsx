@@ -14,7 +14,7 @@ interface MiniCharacterProps {
   onChatOpenChange?: (isOpen: boolean) => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
-  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
 }
 

@@ -935,12 +935,13 @@ function TasksPageContent() {
       <MiniCharacter
         onChatOpenChange={setIsMiniChatOpen}
         taskTree={tree}
-        onAddNode={(parentId, title, nodeType) => {
+        onAddNode={(parentId, title, nodeType, memo) => {
           const newNode: any = {
             id: `${nodeType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
             title: `${nodeType}: ${title}`,
             type: nodeType,
             children: nodeType === "Task" ? undefined : [],
+            memo: memo || undefined, // メモがあれば設定
           };
 
           if (nodeType === "Task") {

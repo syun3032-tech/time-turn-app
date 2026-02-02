@@ -541,12 +541,14 @@ export async function getLoginStreak(userId: string): Promise<LoginStreakData> {
  */
 export async function createConversation(
   userId: string,
-  title: string = '新しい会話'
+  title: string = '新しい会話',
+  source: 'mini' | 'main' = 'main'
 ): Promise<string> {
   const docRef = await addDoc(collection(db, 'conversations'), {
     userId,
     title,
     isCustomTitle: false,
+    source,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
@@ -555,20 +557,29 @@ export async function createConversation(
 
 /**
  * ユーザーの会話一覧を取得
+ * @param source - フィルタオプション: 'mini'=ミニ秘書のみ, 'main'=メインのみ, 'all'または未指定=全て
  */
-export async function getConversations(userId: string): Promise<Conversation[]> {
+export async function getConversations(
+  userId: string,
+  source?: 'mini' | 'main' | 'all'
+): Promise<Conversation[]> {
   // インデックス不要：クライアント側でソート
   const q = query(
     collection(db, 'conversations'),
     where('userId', '==', userId)
   )
   const snapshot = await getDocs(q)
-  const conversations = snapshot.docs.map(doc => ({
+  let conversations = snapshot.docs.map(doc => ({
     id: doc.id,
     ...doc.data(),
     createdAt: toDate(doc.data().createdAt),
     updatedAt: toDate(doc.data().updatedAt),
   } as Conversation))
+
+  // sourceでフィルタ（指定された場合のみ）
+  if (source && source !== 'all') {
+    conversations = conversations.filter(c => c.source === source)
+  }
 
   // updatedAtで降順ソート
   return conversations.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())

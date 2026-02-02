@@ -382,13 +382,14 @@ export default function DashboardPage() {
     loadUsageAndUpdateStreak();
   }, [user]);
 
-  // 会話一覧を読み込み
+  // 会話一覧を読み込み（ミニ秘書の会話も含めて全て取得）
   useEffect(() => {
     if (!user) return;
 
     const loadConversations = async () => {
       try {
-        const convs = await getConversations(user.uid);
+        // フィルタなしで全会話を取得（ミニ秘書の会話も表示）
+        const convs = await getConversations(user.uid, 'all');
         setConversations(convs);
       } catch (error) {
         console.error("Failed to load conversations:", error);
@@ -473,7 +474,7 @@ export default function DashboardPage() {
     if (!user) return;
 
     try {
-      const newConvId = await createConversation(user.uid, '新しい会話');
+      const newConvId = await createConversation(user.uid, '新しい会話', 'main');
       setCurrentConversationId(newConvId);
       setMessages([]);
 
@@ -870,7 +871,7 @@ export default function DashboardPage() {
     let convId = currentConversationId;
     if (!convId) {
       try {
-        convId = await createConversation(user.uid, '新しい会話');
+        convId = await createConversation(user.uid, '新しい会話', 'main');
         setCurrentConversationId(convId);
       } catch (error) {
         console.error("Failed to create conversation:", error);

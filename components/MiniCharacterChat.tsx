@@ -38,7 +38,7 @@ interface ActionItem {
   taskTitle?: string;
   nodeType?: NodeType;
   nodeId?: string;
-  memo?: string;
+  memo?: string; // ノード追加時のメモ、またはメモ追加時の内容
   selected?: boolean; // 複数選択時の選択状態
   success?: boolean;
 }
@@ -55,7 +55,7 @@ interface MiniCharacterChatProps {
   onClose: () => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
-  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
 }
 
@@ -164,23 +164,32 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
       .trim();
   };
 
-  // Goal追加: [ADD_GOAL:目標名] （複数対応）
+  // Goal追加: [ADD_GOAL:目標名] または [ADD_GOAL:目標名|メモ] （複数対応）
   const goalMatches = content.matchAll(/\[ADD_GOAL:([^\]]+)\]/g);
   for (const match of goalMatches) {
-    const goalTitle = match[1].trim();
+    const fullContent = match[1].trim();
+    // パイプ(|)でメモを分離
+    const [goalTitle, goalMemo] = fullContent.includes("|")
+      ? fullContent.split("|").map(s => s.trim())
+      : [fullContent, undefined];
     actions.push({
       type: "add_goal",
       title: goalTitle,
       nodeType: "Goal",
+      memo: goalMemo,
       selected: true,
     });
   }
 
-  // Project追加: [ADD_PROJECT:Goal名:Project名] （複数対応）
+  // Project追加: [ADD_PROJECT:Goal名:Project名] または [ADD_PROJECT:Goal名:Project名|メモ] （複数対応）
   const projectMatches = content.matchAll(/\[ADD_PROJECT:([^:]+):([^\]]+)\]/g);
   for (const match of projectMatches) {
     const parentSearch = match[1].trim();
-    const projectTitle = match[2].trim();
+    const fullContent = match[2].trim();
+    // パイプ(|)でメモを分離
+    const [projectTitle, projectMemo] = fullContent.includes("|")
+      ? fullContent.split("|").map(s => s.trim())
+      : [fullContent, undefined];
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
@@ -190,6 +199,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
         type: "add_goal",
         title: projectTitle,
         nodeType: "Goal",
+        memo: projectMemo,
         selected: true,
       });
     } else {
@@ -199,16 +209,21 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
         title: projectTitle,
         nodeType: "Project",
+        memo: projectMemo,
         selected: true,
       });
     }
   }
 
-  // Milestone追加: [ADD_MILESTONE:Project名:Milestone名] （複数対応）
+  // Milestone追加: [ADD_MILESTONE:Project名:Milestone名] または [ADD_MILESTONE:Project名:Milestone名|メモ] （複数対応）
   const milestoneMatches = content.matchAll(/\[ADD_MILESTONE:([^:]+):([^\]]+)\]/g);
   for (const match of milestoneMatches) {
     const parentSearch = match[1].trim();
-    const milestoneTitle = match[2].trim();
+    const fullContent = match[2].trim();
+    // パイプ(|)でメモを分離
+    const [milestoneTitle, milestoneMemo] = fullContent.includes("|")
+      ? fullContent.split("|").map(s => s.trim())
+      : [fullContent, undefined];
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
@@ -220,6 +235,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
           title: milestoneTitle,
           nodeType: "Project",
+          memo: milestoneMemo,
           selected: true,
         });
       } else if (parentType === "Milestone") {
@@ -229,6 +245,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           parentTitle: parentNode.title?.replace(/^Milestone:\s*/, "") || parentSearch,
           title: milestoneTitle,
           nodeType: "Task",
+          memo: milestoneMemo,
           selected: true,
         });
       } else {
@@ -238,6 +255,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
           title: milestoneTitle,
           nodeType: "Milestone",
+          memo: milestoneMemo,
           selected: true,
         });
       }
@@ -248,16 +266,21 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
         title: milestoneTitle,
         nodeType: "Milestone",
+        memo: milestoneMemo,
         selected: true,
       });
     }
   }
 
-  // タスク追加: [ADD_TASK:Milestone名:Task名] （複数対応）
+  // タスク追加: [ADD_TASK:Milestone名:Task名] または [ADD_TASK:Milestone名:Task名|メモ] （複数対応）
   const taskMatches = content.matchAll(/\[ADD_TASK:([^:]+):([^\]]+)\]/g);
   for (const match of taskMatches) {
     const parentSearch = match[1].trim();
-    const taskTitle = match[2].trim();
+    const fullContent = match[2].trim();
+    // パイプ(|)でメモを分離
+    const [taskTitle, taskMemo] = fullContent.includes("|")
+      ? fullContent.split("|").map(s => s.trim())
+      : [fullContent, undefined];
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
@@ -269,6 +292,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
           title: taskTitle,
           nodeType: "Project",
+          memo: taskMemo,
           selected: true,
         });
       } else if (parentType === "Project") {
@@ -278,6 +302,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           parentTitle: parentNode.title?.replace(/^Project:\s*/, "") || parentSearch,
           title: taskTitle,
           nodeType: "Milestone",
+          memo: taskMemo,
           selected: true,
         });
       } else if (parentType === "Task") {
@@ -296,6 +321,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
           title: taskTitle,
           taskTitle: taskTitle,
           nodeType: "Task",
+          memo: taskMemo,
           selected: true,
         });
       }
@@ -307,6 +333,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
         title: taskTitle,
         taskTitle: taskTitle,
         nodeType: "Task",
+        memo: taskMemo,
         selected: true,
       });
     }
@@ -529,25 +556,25 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
           switch (action.type) {
             case "add_goal":
               if (title) {
-                onAddNode(null, title, "Goal");
+                onAddNode(null, title, "Goal", action.memo);
                 success = true;
               }
               break;
             case "add_project":
               if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Project");
+                onAddNode(action.parentId, title, "Project", action.memo);
                 success = true;
               }
               break;
             case "add_milestone":
               if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Milestone");
+                onAddNode(action.parentId, title, "Milestone", action.memo);
                 success = true;
               }
               break;
             case "add_task":
               if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Task");
+                onAddNode(action.parentId, title, "Task", action.memo);
                 success = true;
               }
               break;
@@ -667,27 +694,31 @@ Goal → Project → Milestone → Task の階層を必ず守ること。
 【タスク/メモ追加時の特殊フォーマット】
 ユーザーが新しいタスクやメモの追加に同意した場合のみ、以下の形式で返答の最後に追加してください：
 
-■ 新しい目標を追加
+■ 新しい目標を追加（メモ付きも可能）
 [ADD_GOAL:目標名]
+[ADD_GOAL:目標名|なぜ達成したいか（動機メモ）]
 
 ■ Goal の下に Project を追加
 [ADD_PROJECT:Goal名:Project名]
+[ADD_PROJECT:Goal名:Project名|メモ]
 
 ■ Project の下に Milestone を追加
 [ADD_MILESTONE:Project名:Milestone名]
+[ADD_MILESTONE:Project名:Milestone名|メモ]
 
 ■ Milestone の下に Task を追加
 [ADD_TASK:Milestone名:Task名]
+[ADD_TASK:Milestone名:Task名|メモ]
 
-■ Task の下にサブタスク的メモを追加
-[ADD_MEMO:Task名:メモ内容]
+■ 既存ノードにメモを追加
+[ADD_MEMO:ノード名:メモ内容]
 
-例: 「じゃあGoalとして追加しとくね！[ADD_GOAL:TOEIC800点突破]」
+例: 「じゃあGoalとして追加しとくね！[ADD_GOAL:TOEIC800点突破|就活で有利になるから]」
 例: 「Projectとして追加！[ADD_PROJECT:TOEIC800点突破:リスニング強化]」
-例: 「Milestoneとして追加！[ADD_MILESTONE:リスニング強化:Part1-4対策]」
-例: 「タスクとして追加！[ADD_TASK:Part1-4対策:公式問題集Part1]」
+例: 「タスクとして追加！[ADD_TASK:Part1-4対策:公式問題集Part1|毎日5問ずつ]」
 例: 「メモ残しとくね！[ADD_MEMO:公式問題集Part1:明日までに5問解く]」
 
+※ヒアリングで聞いた「なぜ」は必ずGoalのメモに残す
 ※ユーザーが明確に同意していない場合は、このフォーマットを使わないでください。
 ※ Goal に直接 Task は追加しない。必ず階層を守る。`;
       }
