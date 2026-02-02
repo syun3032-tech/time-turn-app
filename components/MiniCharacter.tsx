@@ -164,11 +164,13 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     if (!element) return;
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (isChatOpen) return; // チャット中は無視
       const touch = e.touches[0];
       handlePressStart(touch.clientX, touch.clientY);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (isChatOpen) return; // チャット中は無視
       if (isDragging) {
         e.preventDefault(); // passive: false なので動作する
         const touch = e.touches[0];
@@ -179,6 +181,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     };
 
     const handleTouchEnd = () => {
+      if (isChatOpen) return; // チャット中は無視
       handlePressCancel();
       handleDragEnd();
     };
@@ -192,13 +195,14 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
       element.removeEventListener("touchmove", handleTouchMove);
       element.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [isDragging, handlePressStart, handleDragMove, handlePressCancel, handleDragEnd]);
+  }, [isDragging, isChatOpen, handlePressStart, handleDragMove, handlePressCancel, handleDragEnd]);
 
   // マウスイベント
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isChatOpen) return; // チャット中は無視
     e.preventDefault();
     handlePressStart(e.clientX, e.clientY);
-  }, [handlePressStart]);
+  }, [isChatOpen, handlePressStart]);
 
   // グローバルマウスイベント（ドラッグ中）
   useEffect(() => {
@@ -273,10 +277,10 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     };
   };
 
-  // アニメーションループ（手動配置またはドラッグ中は停止）
+  // アニメーションループ（手動配置、ドラッグ中、チャット中は停止）
   useEffect(() => {
-    // 手動配置中またはドラッグ中は自動移動しない
-    if (isManuallyPositioned || isDragging) {
+    // 手動配置中、ドラッグ中、チャット開いてる間は自動移動しない
+    if (isManuallyPositioned || isDragging || isChatOpen) {
       return;
     }
 
@@ -351,7 +355,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isManuallyPositioned, isDragging]);
+  }, [isManuallyPositioned, isDragging, isChatOpen]);
 
   // ウィンドウリサイズ時に位置を調整
   useEffect(() => {
