@@ -1310,7 +1310,7 @@ export default function DashboardPage() {
           </Box>
         )}
 
-        {/* キャラクター + 吹き出し + 入力欄（重ねて表示） - モバイル版 */}
+        {/* キャラクター + 吹き出し（一体化） - モバイル版 */}
         <Box
           position="relative"
           w="100%"
@@ -1319,66 +1319,68 @@ export default function DashboardPage() {
           alignItems="center"
           flex={1}
           minH={0}
+          justifyContent="center"
         >
-          <Box ml={4}>
+          {/* キャラクター */}
+          <Box position="relative" ml={4}>
             <CharacterAvatar
               expression={characterExpression}
               width="330px"
               height="495px"
               variant="bare"
             />
-          </Box>
 
-          {/* 吹き出し */}
-          <Box
-            bg="white"
-            px={6}
-            py={4}
-            borderRadius="16px"
-            boxShadow={isBubbleExpanded ? "0 8px 24px rgba(0,0,0,0.15)" : "0 4px 12px rgba(0,0,0,0.08)"}
-            border="1px solid"
-            borderColor="gray.200"
-            position={isBubbleExpanded ? "fixed" : "absolute"}
-            bottom={isBubbleExpanded ? "auto" : "130px"}
-            top={isBubbleExpanded ? "50%" : "auto"}
-            left={isBubbleExpanded ? "50%" : "auto"}
-            transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
-            maxW={isBubbleExpanded ? "90vw" : "340px"}
-            w={isBubbleExpanded ? "90vw" : "90%"}
-            zIndex={isBubbleExpanded ? 100 : 10}
-            cursor="pointer"
-            onClick={() => !isTyping && setIsBubbleExpanded(!isBubbleExpanded)}
-            transition="all 0.2s ease"
-          >
-            {!isBubbleExpanded && (
-              <Box
-                position="absolute"
-                top="-12px"
-                left="50%"
-                transform="translateX(-50%)"
-                w="0"
-                h="0"
-                borderLeft="12px solid transparent"
-                borderRight="12px solid transparent"
-                borderBottom="12px solid white"
-                filter="drop-shadow(0 -2px 2px rgba(0,0,0,0.04))"
-              />
-            )}
+            {/* 吹き出し（キャラクターに対して相対配置） */}
+            <Box
+              bg="white"
+              px={6}
+              py={4}
+              borderRadius="16px"
+              boxShadow={isBubbleExpanded ? "0 8px 24px rgba(0,0,0,0.15)" : "0 4px 12px rgba(0,0,0,0.08)"}
+              border="1px solid"
+              borderColor="gray.200"
+              position={isBubbleExpanded ? "fixed" : "absolute"}
+              bottom={isBubbleExpanded ? "auto" : "-20px"}
+              top={isBubbleExpanded ? "50%" : "auto"}
+              left={isBubbleExpanded ? "50%" : "50%"}
+              transform={isBubbleExpanded ? "translate(-50%, -50%)" : "translateX(-50%)"}
+              maxW={isBubbleExpanded ? "90vw" : "320px"}
+              w={isBubbleExpanded ? "90vw" : "90vw"}
+              zIndex={isBubbleExpanded ? 100 : 10}
+              cursor="pointer"
+              onClick={() => !isTyping && setIsBubbleExpanded(!isBubbleExpanded)}
+              transition="all 0.2s ease"
+            >
+              {!isBubbleExpanded && (
+                <Box
+                  position="absolute"
+                  top="-12px"
+                  left="50%"
+                  transform="translateX(-50%)"
+                  w="0"
+                  h="0"
+                  borderLeft="12px solid transparent"
+                  borderRight="12px solid transparent"
+                  borderBottom="12px solid white"
+                  filter="drop-shadow(0 -2px 2px rgba(0,0,0,0.04))"
+                />
+              )}
 
-            <Box ref={bubbleScrollRef} maxH={isBubbleExpanded ? "60vh" : "100px"} overflowY="auto">
-              <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.6" whiteSpace="pre-wrap">
-                {isLoading ? "考えています..." : typedMessage}
-                {!isLoading && isTyping && (
-                  <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
-                )}
-              </Text>
+              <Box ref={bubbleScrollRef} maxH={isBubbleExpanded ? "60vh" : "80px"} overflowY="auto">
+                <Text fontSize="md" fontWeight="bold" color="gray.900" lineHeight="1.6" whiteSpace="pre-wrap">
+                  {isLoading ? "考えています..." : typedMessage}
+                  {!isLoading && isTyping && (
+                    <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
+                  )}
+                </Text>
+              </Box>
+
+              {isBubbleExpanded && (
+                <Text fontSize="xs" color="gray.400" textAlign="center" mt={2}>
+                  タップで閉じる
+                </Text>
+              )}
             </Box>
-
-            {isBubbleExpanded && (
-              <Text fontSize="xs" color="gray.400" textAlign="center" mt={2}>
-                タップで閉じる
-              </Text>
-            )}
           </Box>
 
           {isBubbleExpanded && (
@@ -1395,69 +1397,78 @@ export default function DashboardPage() {
           )}
         </Box>
 
-        {/* 会話履歴ボタン - モバイル版 */}
-        {messages.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            colorScheme="gray"
-            onClick={() => setIsHistoryModalOpen(true)}
-            mb={1}
-            mt={-2}
-          >
-            📝 会話履歴を見る ({messages.length / 2}往復)
-          </Button>
-        )}
-
-        {/* チャット入力欄 - モバイル版 */}
-        <Box w="90%" maxW="340px" flexShrink={0}>
-          <VStack gap={2}>
+        {/* 下部固定エリア（会話履歴ボタン + 入力欄） - モバイル版 */}
+        <Box w="90%" maxW="340px" flexShrink={0} pb={2}>
+          {/* 会話履歴ボタン */}
+          {messages.length > 0 && (
+            <Button
+              size="xs"
+              variant="ghost"
+              colorScheme="gray"
+              onClick={() => setIsHistoryModalOpen(true)}
+              mb={2}
+              w="100%"
+            >
+              📝 会話履歴を見る ({messages.length / 2}往復)
+            </Button>
+          )}
+          {/* 入力欄と送信ボタンを横並びに */}
+          <HStack gap={2} w="100%">
             <Input
               placeholder={
                 taskBreakdownStage === "output"
-                  ? "タスクについて何かあれば..."
+                  ? "タスクについて..."
                   : taskBreakdownStage === "proposal"
-                  ? "「お願い」「やろう」など..."
+                  ? "「お願い」など..."
                   : taskBreakdownStage === "hearing"
-                  ? "気軽に答えてください..."
-                  : "「〜したい」と話してみてください..."
+                  ? "答えてください..."
+                  : "「〜したい」と話す..."
               }
               value={message}
               onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
               bg="white"
               borderRadius="md"
               disabled={isLoading}
               color="gray.900"
               fontWeight="medium"
-              fontSize="md"
-              px={4}
+              fontSize="sm"
+              size="sm"
+              px={3}
+              flex={1}
               _placeholder={{ color: "gray.400" }}
             />
             <Button
               colorScheme="teal"
-              w="100%"
+              size="sm"
               onClick={handleSendMessage}
               loading={isLoading}
               disabled={!message.trim() || isLoading}
+              flexShrink={0}
             >
-              {isLoading ? "送信中..." : "送信"}
+              送信
             </Button>
+          </HStack>
 
-            {/* タスク反映ボタン（output段階で会話がある時） */}
-            {taskBreakdownStage === "output" && messages.length >= 4 && (
-              <Button
-                colorScheme="blue"
-                w="100%"
-                mt={2}
-                size="lg"
-                onClick={() => {
-                  handleReflectToTaskTree();
-                }}
-              >
-                📋 タスクツリーに反映する
-              </Button>
-            )}
-          </VStack>
+          {/* タスク反映ボタン（output段階で会話がある時） */}
+          {taskBreakdownStage === "output" && messages.length >= 4 && (
+            <Button
+              colorScheme="blue"
+              w="100%"
+              mt={1}
+              size="sm"
+              onClick={() => {
+                handleReflectToTaskTree();
+              }}
+            >
+              📋 タスクツリーに反映
+            </Button>
+          )}
         </Box>
       </VStack>
 
