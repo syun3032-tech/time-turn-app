@@ -1242,12 +1242,11 @@ export default function DashboardPage() {
       {/* メインコンテンツ - モバイル版 */}
       <VStack
         gap={0}
-        pt={4}
+        pt={2}
         pb="64px"
         display={{ base: "flex", md: "none" }}
         flex={1}
         overflow="hidden"
-        justifyContent="space-between"
       >
         {/* ヒアリング進捗インジケーター */}
         {taskBreakdownStage === "hearing" && (
@@ -1320,13 +1319,12 @@ export default function DashboardPage() {
           alignItems="center"
           flex={1}
           minH={0}
-          overflow="hidden"
         >
-          <Box ml={4} flex={1} minH={0} display="flex" alignItems="flex-start">
+          <Box ml={4}>
             <CharacterAvatar
               expression={characterExpression}
-              width="280px"
-              height="420px"
+              width="330px"
+              height="495px"
               variant="bare"
             />
           </Box>
@@ -1341,7 +1339,7 @@ export default function DashboardPage() {
             border="1px solid"
             borderColor="gray.200"
             position={isBubbleExpanded ? "fixed" : "absolute"}
-            bottom={isBubbleExpanded ? "auto" : "0"}
+            bottom={isBubbleExpanded ? "auto" : "130px"}
             top={isBubbleExpanded ? "50%" : "auto"}
             left={isBubbleExpanded ? "50%" : "auto"}
             transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
