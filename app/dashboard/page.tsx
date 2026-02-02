@@ -1472,13 +1472,12 @@ export default function DashboardPage() {
           {/* キャラクター（吹き出しの左側） */}
           <Box
             flexShrink={0}
-            alignSelf="flex-end"
-            mb="80px"
+            alignSelf="center"
           >
             <CharacterAvatar
               expression={characterExpression}
-              width="350px"
-              height="525px"
+              width="480px"
+              height="720px"
               variant="bare"
             />
           </Box>
