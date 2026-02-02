@@ -1187,7 +1187,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <Box bg="#f8fafc" minH="100vh" pb="64px">
+    <Box bg="#f8fafc" h="100vh" overflow="hidden" display="flex" flexDirection="column">
       {/* 会話履歴サイドバー */}
       <ConversationSidebar
         isOpen={isSidebarOpen}
@@ -1240,7 +1240,15 @@ export default function DashboardPage() {
       </Box>
 
       {/* メインコンテンツ - モバイル版 */}
-      <VStack gap={0} pt={8} display={{ base: "flex", md: "none" }}>
+      <VStack
+        gap={0}
+        pt={4}
+        pb="64px"
+        display={{ base: "flex", md: "none" }}
+        flex={1}
+        overflow="hidden"
+        justifyContent="space-between"
+      >
         {/* ヒアリング進捗インジケーター */}
         {taskBreakdownStage === "hearing" && (
           <Box w="90%" maxW="340px" mb={4}>
@@ -1310,13 +1318,15 @@ export default function DashboardPage() {
           display="flex"
           flexDirection="column"
           alignItems="center"
-          minH="520px"
+          flex={1}
+          minH={0}
+          overflow="hidden"
         >
-          <Box ml={4}>
+          <Box ml={4} flex={1} minH={0} display="flex" alignItems="flex-start">
             <CharacterAvatar
               expression={characterExpression}
-              width="330px"
-              height="495px"
+              width="280px"
+              height="420px"
               variant="bare"
             />
           </Box>
@@ -1331,7 +1341,8 @@ export default function DashboardPage() {
             border="1px solid"
             borderColor="gray.200"
             position={isBubbleExpanded ? "fixed" : "absolute"}
-            top={isBubbleExpanded ? "50%" : "400px"}
+            bottom={isBubbleExpanded ? "auto" : "0"}
+            top={isBubbleExpanded ? "50%" : "auto"}
             left={isBubbleExpanded ? "50%" : "auto"}
             transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
             maxW={isBubbleExpanded ? "90vw" : "340px"}
@@ -1401,7 +1412,7 @@ export default function DashboardPage() {
         )}
 
         {/* チャット入力欄 - モバイル版 */}
-        <Box w="90%" maxW="340px" mb={4}>
+        <Box w="90%" maxW="340px" flexShrink={0}>
           <VStack gap={2}>
             <Input
               placeholder={
@@ -1454,9 +1465,11 @@ export default function DashboardPage() {
 
       {/* メインコンテンツ - PC版（キャラクター背面レイアウト） */}
       <Box
-        display={{ base: "none", md: "block" }}
+        display={{ base: "none", md: "flex" }}
         position="relative"
-        minH="calc(100vh - 128px)"
+        flex={1}
+        overflow="hidden"
+        pb="64px"
       >
         {/* キャラクター + 吹き出し + 入力欄（横並び） */}
         <Box
@@ -1466,9 +1479,10 @@ export default function DashboardPage() {
           flexDirection="row"
           alignItems="center"
           justifyContent="center"
-          minH="calc(100vh - 128px)"
+          flex={1}
           px={8}
           gap={4}
+          overflow="hidden"
         >
           {/* キャラクター（吹き出しの左側） */}
           <Box
