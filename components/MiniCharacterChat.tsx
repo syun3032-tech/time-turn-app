@@ -29,21 +29,25 @@ import { ConfirmModal } from "./ConfirmModal";
 // ノードタイプの型定義
 type NodeType = "Goal" | "Project" | "Milestone" | "Task";
 
+// 単一アクションの型
+interface ActionItem {
+  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo";
+  parentId?: string;
+  parentTitle?: string;
+  title?: string;
+  taskTitle?: string;
+  nodeType?: NodeType;
+  nodeId?: string;
+  memo?: string;
+  selected?: boolean; // 複数選択時の選択状態
+  success?: boolean;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
-  action?: {
-    type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo";
-    parentId?: string;
-    parentTitle?: string;
-    title?: string; // 追加するノードのタイトル
-    taskTitle?: string; // 後方互換性のため残す
-    nodeType?: NodeType; // 追加するノードの種類
-    nodeId?: string;
-    memo?: string;
-    confirmed?: boolean;
-    success?: boolean;
-  };
+  actions?: ActionItem[]; // 複数アクション対応
+  actionsConfirmed?: boolean; // アクション全体の確認状態
 }
 
 interface MiniCharacterChatProps {
@@ -145,8 +149,10 @@ function getChildNodeType(parentType: NodeType | null): NodeType | null {
   }
 }
 
-// AIレスポンスからアクション提案を解析（階層ルール対応）
-function parseActionFromResponse(content: string, tree: any[]): { cleanContent: string; action?: Message["action"] } {
+// AIレスポンスからアクション提案を解析（複数アクション対応）
+function parseActionsFromResponse(content: string, tree: any[]): { cleanContent: string; actions: ActionItem[] } {
+  const actions: ActionItem[] = [];
+
   // 全てのアクションタグを削除するための正規表現
   const cleanAllTags = (text: string) => {
     return text
@@ -158,181 +164,171 @@ function parseActionFromResponse(content: string, tree: any[]): { cleanContent: 
       .trim();
   };
 
-  // Goal追加: [ADD_GOAL:目標名]
-  const goalMatch = content.match(/\[ADD_GOAL:([^\]]+)\]/);
-  if (goalMatch) {
-    const goalTitle = goalMatch[1].trim();
-    return {
-      cleanContent: cleanAllTags(content),
-      action: {
-        type: "add_goal",
-        title: goalTitle,
-        nodeType: "Goal",
-      }
-    };
+  // Goal追加: [ADD_GOAL:目標名] （複数対応）
+  const goalMatches = content.matchAll(/\[ADD_GOAL:([^\]]+)\]/g);
+  for (const match of goalMatches) {
+    const goalTitle = match[1].trim();
+    actions.push({
+      type: "add_goal",
+      title: goalTitle,
+      nodeType: "Goal",
+      selected: true,
+    });
   }
 
-  // Project追加: [ADD_PROJECT:Goal名:Project名]
-  const projectMatch = content.match(/\[ADD_PROJECT:([^:]+):([^\]]+)\]/);
-  if (projectMatch) {
-    const parentSearch = projectMatch[1].trim();
-    const projectTitle = projectMatch[2].trim();
+  // Project追加: [ADD_PROJECT:Goal名:Project名] （複数対応）
+  const projectMatches = content.matchAll(/\[ADD_PROJECT:([^:]+):([^\]]+)\]/g);
+  for (const match of projectMatches) {
+    const parentSearch = match[1].trim();
+    const projectTitle = match[2].trim();
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
-    // 親がGoalでない場合はGoalとして追加を提案
     if (parentNode && parentType !== "Goal") {
-      return {
-        cleanContent: cleanAllTags(content),
-        action: {
-          type: "add_goal",
-          title: projectTitle,
-          nodeType: "Goal",
-        }
-      };
-    }
-
-    return {
-      cleanContent: cleanAllTags(content),
-      action: {
+      // 親がGoalでない場合はGoalとして追加
+      actions.push({
+        type: "add_goal",
+        title: projectTitle,
+        nodeType: "Goal",
+        selected: true,
+      });
+    } else {
+      actions.push({
         type: "add_project",
         parentId: parentNode?.id,
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
         title: projectTitle,
         nodeType: "Project",
-      }
-    };
+        selected: true,
+      });
+    }
   }
 
-  // Milestone追加: [ADD_MILESTONE:Project名:Milestone名]
-  const milestoneMatch = content.match(/\[ADD_MILESTONE:([^:]+):([^\]]+)\]/);
-  if (milestoneMatch) {
-    const parentSearch = milestoneMatch[1].trim();
-    const milestoneTitle = milestoneMatch[2].trim();
+  // Milestone追加: [ADD_MILESTONE:Project名:Milestone名] （複数対応）
+  const milestoneMatches = content.matchAll(/\[ADD_MILESTONE:([^:]+):([^\]]+)\]/g);
+  for (const match of milestoneMatches) {
+    const parentSearch = match[1].trim();
+    const milestoneTitle = match[2].trim();
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
-    // 親がProjectでない場合は適切な階層を自動判定
     if (parentNode && parentType !== "Project") {
       if (parentType === "Goal") {
-        // Goalの下にはProjectを作ってその下にMilestoneを追加（シンプルにProjectとして追加）
-        return {
-          cleanContent: cleanAllTags(content),
-          action: {
-            type: "add_project",
-            parentId: parentNode.id,
-            parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
-            title: milestoneTitle,
-            nodeType: "Project",
-          }
-        };
+        actions.push({
+          type: "add_project",
+          parentId: parentNode.id,
+          parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
+          title: milestoneTitle,
+          nodeType: "Project",
+          selected: true,
+        });
       } else if (parentType === "Milestone") {
-        // Milestoneの下にはTaskを追加
-        return {
-          cleanContent: cleanAllTags(content),
-          action: {
-            type: "add_task",
-            parentId: parentNode.id,
-            parentTitle: parentNode.title?.replace(/^Milestone:\s*/, "") || parentSearch,
-            title: milestoneTitle,
-            nodeType: "Task",
-          }
-        };
+        actions.push({
+          type: "add_task",
+          parentId: parentNode.id,
+          parentTitle: parentNode.title?.replace(/^Milestone:\s*/, "") || parentSearch,
+          title: milestoneTitle,
+          nodeType: "Task",
+          selected: true,
+        });
+      } else {
+        actions.push({
+          type: "add_milestone",
+          parentId: parentNode?.id,
+          parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
+          title: milestoneTitle,
+          nodeType: "Milestone",
+          selected: true,
+        });
       }
-    }
-
-    return {
-      cleanContent: cleanAllTags(content),
-      action: {
+    } else {
+      actions.push({
         type: "add_milestone",
         parentId: parentNode?.id,
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
         title: milestoneTitle,
         nodeType: "Milestone",
-      }
-    };
+        selected: true,
+      });
+    }
   }
 
-  // タスク追加: [ADD_TASK:Milestone名:Task名]
-  const taskMatch = content.match(/\[ADD_TASK:([^:]+):([^\]]+)\]/);
-  if (taskMatch) {
-    const parentSearch = taskMatch[1].trim();
-    const taskTitle = taskMatch[2].trim();
+  // タスク追加: [ADD_TASK:Milestone名:Task名] （複数対応）
+  const taskMatches = content.matchAll(/\[ADD_TASK:([^:]+):([^\]]+)\]/g);
+  for (const match of taskMatches) {
+    const parentSearch = match[1].trim();
+    const taskTitle = match[2].trim();
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
     const parentType = getNodeType(parentNode);
 
-    // 親がMilestoneでない場合は適切な階層を自動判定
     if (parentNode && parentType !== "Milestone") {
       if (parentType === "Goal") {
-        // Goalの下にはProjectを追加
-        return {
-          cleanContent: cleanAllTags(content),
-          action: {
-            type: "add_project",
-            parentId: parentNode.id,
-            parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
-            title: taskTitle,
-            nodeType: "Project",
-          }
-        };
+        actions.push({
+          type: "add_project",
+          parentId: parentNode.id,
+          parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
+          title: taskTitle,
+          nodeType: "Project",
+          selected: true,
+        });
       } else if (parentType === "Project") {
-        // Projectの下にはMilestoneを追加
-        return {
-          cleanContent: cleanAllTags(content),
-          action: {
-            type: "add_milestone",
-            parentId: parentNode.id,
-            parentTitle: parentNode.title?.replace(/^Project:\s*/, "") || parentSearch,
-            title: taskTitle,
-            nodeType: "Milestone",
-          }
-        };
+        actions.push({
+          type: "add_milestone",
+          parentId: parentNode.id,
+          parentTitle: parentNode.title?.replace(/^Project:\s*/, "") || parentSearch,
+          title: taskTitle,
+          nodeType: "Milestone",
+          selected: true,
+        });
       } else if (parentType === "Task") {
-        // Taskの下にはメモを追加
-        return {
-          cleanContent: cleanAllTags(content),
-          action: {
-            type: "add_memo",
-            nodeId: parentNode.id,
-            parentTitle: parentNode.title?.replace(/^Task:\s*/, "") || parentSearch,
-            memo: taskTitle,
-          }
-        };
+        actions.push({
+          type: "add_memo",
+          nodeId: parentNode.id,
+          parentTitle: parentNode.title?.replace(/^Task:\s*/, "") || parentSearch,
+          memo: taskTitle,
+          selected: true,
+        });
+      } else {
+        actions.push({
+          type: "add_task",
+          parentId: parentNode?.id,
+          parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
+          title: taskTitle,
+          taskTitle: taskTitle,
+          nodeType: "Task",
+          selected: true,
+        });
       }
-    }
-
-    return {
-      cleanContent: cleanAllTags(content),
-      action: {
+    } else {
+      actions.push({
         type: "add_task",
         parentId: parentNode?.id,
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
         title: taskTitle,
-        taskTitle: taskTitle, // 後方互換性
+        taskTitle: taskTitle,
         nodeType: "Task",
-      }
-    };
+        selected: true,
+      });
+    }
   }
 
-  // メモ追加: [ADD_MEMO:ノード名:メモ内容]
-  const memoMatch = content.match(/\[ADD_MEMO:([^:]+):([^\]]+)\]/);
-  if (memoMatch) {
-    const nodeSearch = memoMatch[1].trim();
-    const memo = memoMatch[2].trim();
+  // メモ追加: [ADD_MEMO:ノード名:メモ内容] （複数対応）
+  const memoMatches = content.matchAll(/\[ADD_MEMO:([^:]+):([^\]]+)\]/g);
+  for (const match of memoMatches) {
+    const nodeSearch = match[1].trim();
+    const memo = match[2].trim();
     const node = findNodeByIdOrTitle(tree, nodeSearch);
 
-    return {
-      cleanContent: cleanAllTags(content),
-      action: {
-        type: "add_memo",
-        nodeId: node?.id,
-        parentTitle: node?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || nodeSearch,
-        memo,
-      }
-    };
+    actions.push({
+      type: "add_memo",
+      nodeId: node?.id,
+      parentTitle: node?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || nodeSearch,
+      memo,
+      selected: true,
+    });
   }
 
-  return { cleanContent: content };
+  return { cleanContent: cleanAllTags(content), actions };
 }
 
 const CONTEXT_PROMPT = "ユーザーは現在「目標管理」画面を見ています。目標やタスクの進捗、やる気、困っていることについて優しくサポートしてください。";
@@ -503,85 +499,92 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
     }
   };
 
-  // アクション確認ハンドラー
-  const handleConfirmAction = (msgIndex: number, confirm: boolean) => {
-    const msg = messages[msgIndex];
-    if (!msg.action) return;
+  // 個別アクションの選択切り替え
+  const handleToggleAction = (msgIndex: number, actionIndex: number) => {
+    setMessages(prev => prev.map((m, i) => {
+      if (i !== msgIndex || !m.actions) return m;
+      return {
+        ...m,
+        actions: m.actions.map((a, j) =>
+          j === actionIndex ? { ...a, selected: !a.selected } : a
+        )
+      };
+    }));
+  };
 
-    let actionSuccess = false;
+  // 複数アクションの一括実行
+  const handleConfirmActions = (msgIndex: number, confirm: boolean) => {
+    const msg = messages[msgIndex];
+    if (!msg.actions || msg.actions.length === 0) return;
 
     if (confirm) {
-      const action = msg.action;
-      const title = action.title || action.taskTitle || "";
+      // 選択されたアクションを実行
+      const updatedActions = msg.actions.map(action => {
+        if (!action.selected) return { ...action, success: undefined };
 
-      // 新しい onAddNode を使う場合
-      if (onAddNode) {
-        switch (action.type) {
-          case "add_goal":
-            if (title) {
-              onAddNode(null, title, "Goal");
-              actionSuccess = true;
-            }
-            break;
-          case "add_project":
-            if (action.parentId && title) {
-              onAddNode(action.parentId, title, "Project");
-              actionSuccess = true;
-            } else if (!action.parentId) {
-              console.error("親ノード（Goal）が見つかりませんでした:", action.parentTitle);
-            }
-            break;
-          case "add_milestone":
-            if (action.parentId && title) {
-              onAddNode(action.parentId, title, "Milestone");
-              actionSuccess = true;
-            } else if (!action.parentId) {
-              console.error("親ノード（Project）が見つかりませんでした:", action.parentTitle);
-            }
-            break;
-          case "add_task":
-            if (action.parentId && title) {
-              onAddNode(action.parentId, title, "Task");
-              actionSuccess = true;
-            } else if (!action.parentId) {
-              console.error("親ノード（Milestone）が見つかりませんでした:", action.parentTitle);
-            }
-            break;
-          case "add_memo":
-            if (action.nodeId && action.memo && onUpdateMemo) {
-              onUpdateMemo(action.nodeId, action.memo);
-              actionSuccess = true;
-            } else if (!action.nodeId) {
-              console.error("ノードが見つかりませんでした:", action.parentTitle);
-            }
-            break;
-        }
-      } else {
-        // 後方互換性: 古い onAddTask を使う場合
-        if (action.type === "add_task" && title && onAddTask) {
-          if (action.parentId) {
+        const title = action.title || action.taskTitle || "";
+        let success = false;
+
+        if (onAddNode) {
+          switch (action.type) {
+            case "add_goal":
+              if (title) {
+                onAddNode(null, title, "Goal");
+                success = true;
+              }
+              break;
+            case "add_project":
+              if (action.parentId && title) {
+                onAddNode(action.parentId, title, "Project");
+                success = true;
+              }
+              break;
+            case "add_milestone":
+              if (action.parentId && title) {
+                onAddNode(action.parentId, title, "Milestone");
+                success = true;
+              }
+              break;
+            case "add_task":
+              if (action.parentId && title) {
+                onAddNode(action.parentId, title, "Task");
+                success = true;
+              }
+              break;
+            case "add_memo":
+              if (action.nodeId && action.memo && onUpdateMemo) {
+                onUpdateMemo(action.nodeId, action.memo);
+                success = true;
+              }
+              break;
+          }
+        } else if (onAddTask) {
+          // 後方互換性
+          if (action.type === "add_task" && title && action.parentId) {
             onAddTask(action.parentId, title);
-            actionSuccess = true;
-          } else {
-            console.error("親ノードが見つかりませんでした:", action.parentTitle);
-          }
-        } else if (action.type === "add_memo" && action.memo && onUpdateMemo) {
-          if (action.nodeId) {
+            success = true;
+          } else if (action.type === "add_memo" && action.memo && action.nodeId && onUpdateMemo) {
             onUpdateMemo(action.nodeId, action.memo);
-            actionSuccess = true;
-          } else {
-            console.error("ノードが見つかりませんでした:", action.parentTitle);
+            success = true;
           }
         }
-      }
-    }
 
-    // メッセージを更新して確認済みにする（成功したかどうかも記録）
-    setMessages(prev => prev.map((m, i) =>
-      i === msgIndex
-        ? { ...m, action: { ...m.action!, confirmed: confirm, success: confirm ? actionSuccess : undefined } }
-        : m
-    ));
+        return { ...action, success };
+      });
+
+      setMessages(prev => prev.map((m, i) =>
+        i === msgIndex
+          ? { ...m, actions: updatedActions, actionsConfirmed: true }
+          : m
+      ));
+    } else {
+      // キャンセル
+      setMessages(prev => prev.map((m, i) =>
+        i === msgIndex
+          ? { ...m, actionsConfirmed: false }
+          : m
+      ));
+    }
   };
 
   const handleSend = async () => {
@@ -747,9 +750,14 @@ ${CONTEXT_PROMPT}${taskInfo}
       ]);
 
       if (response.success && response.content) {
-        // アクション提案を解析
-        const { cleanContent, action } = parseActionFromResponse(response.content, taskTree || []);
-        setMessages([...newMessages, { role: "assistant", content: cleanContent, action }]);
+        // アクション提案を解析（複数対応）
+        const { cleanContent, actions } = parseActionsFromResponse(response.content, taskTree || []);
+        const newMsg: Message = {
+          role: "assistant",
+          content: cleanContent,
+          actions: actions.length > 0 ? actions : undefined,
+        };
+        setMessages([...newMessages, newMsg]);
         // AIの返答をFirestoreに保存
         if (convId) {
           addMessageToConversation(convId, "assistant", cleanContent).catch(console.error);
@@ -898,55 +906,89 @@ ${CONTEXT_PROMPT}${taskInfo}
               >
                 {msg.content}
               </Text>
-              {/* アクション確認UI */}
-              {msg.action && msg.action.confirmed === undefined && (
+              {/* 複数アクション確認UI */}
+              {msg.actions && msg.actions.length > 0 && msg.actionsConfirmed === undefined && (
                 <VStack align="stretch" mt={2} gap={1}>
                   <Box bg="teal.50" p={2} borderRadius="md">
-                    <Text fontSize="xs" color="teal.700" fontWeight="bold">
-                      {msg.action.type === "add_goal" ? "Goal追加" :
-                       msg.action.type === "add_project" ? "Project追加" :
-                       msg.action.type === "add_milestone" ? "Milestone追加" :
-                       msg.action.type === "add_task" ? "Task追加" : "メモ追加"}
+                    <Text fontSize="xs" color="teal.700" fontWeight="bold" mb={1}>
+                      以下を追加しますか？
                     </Text>
-                    <Text fontSize="xs" color="gray.600">
-                      {msg.action.type === "add_goal"
-                        ? `新しい目標「${msg.action.title}」を追加`
-                        : msg.action.type === "add_project"
-                        ? `「${msg.action.parentTitle}」に Project「${msg.action.title}」を追加`
-                        : msg.action.type === "add_milestone"
-                        ? `「${msg.action.parentTitle}」に Milestone「${msg.action.title}」を追加`
-                        : msg.action.type === "add_task"
-                        ? `「${msg.action.parentTitle}」に Task「${msg.action.title || msg.action.taskTitle}」を追加`
-                        : `「${msg.action.parentTitle}」にメモ追加`}
-                    </Text>
+                    <VStack align="stretch" gap={1}>
+                      {msg.actions.map((action, actionIdx) => (
+                        <HStack
+                          key={actionIdx}
+                          gap={2}
+                          cursor="pointer"
+                          onClick={() => handleToggleAction(idx, actionIdx)}
+                          _hover={{ bg: "teal.100" }}
+                          p={1}
+                          borderRadius="sm"
+                        >
+                          <Box
+                            w="16px"
+                            h="16px"
+                            borderRadius="sm"
+                            border="2px solid"
+                            borderColor={action.selected ? "teal.500" : "gray.300"}
+                            bg={action.selected ? "teal.500" : "transparent"}
+                            display="flex"
+                            alignItems="center"
+                            justifyContent="center"
+                            flexShrink={0}
+                          >
+                            {action.selected && (
+                              <Text fontSize="10px" color="white" fontWeight="bold">✓</Text>
+                            )}
+                          </Box>
+                          <Text fontSize="xs" color="gray.700">
+                            {action.type === "add_goal" ? "Goal" :
+                             action.type === "add_project" ? "Project" :
+                             action.type === "add_milestone" ? "Milestone" :
+                             action.type === "add_task" ? "Task" : "メモ"}
+                            : {action.title || action.memo}
+                            {action.parentTitle && ` (${action.parentTitle}に)`}
+                          </Text>
+                        </HStack>
+                      ))}
+                    </VStack>
                   </Box>
                   <HStack gap={2}>
                     <Button
                       size="xs"
                       colorScheme="teal"
                       flex={1}
-                      onClick={() => handleConfirmAction(idx, true)}
+                      onClick={() => handleConfirmActions(idx, true)}
+                      disabled={!msg.actions.some(a => a.selected)}
                     >
-                      追加する
+                      追加する ({msg.actions.filter(a => a.selected).length}件)
                     </Button>
                     <Button
                       size="xs"
                       variant="ghost"
                       flex={1}
-                      onClick={() => handleConfirmAction(idx, false)}
+                      onClick={() => handleConfirmActions(idx, false)}
                     >
                       やめる
                     </Button>
                   </HStack>
                 </VStack>
               )}
-              {msg.action && msg.action.confirmed === true && msg.action.success === true && (
-                <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
+              {/* 確認後の結果表示 */}
+              {msg.actions && msg.actionsConfirmed === true && (
+                <VStack align="stretch" mt={1} gap={0}>
+                  {msg.actions.filter(a => a.selected && a.success).length > 0 && (
+                    <Text fontSize="xs" color="green.500">
+                      {msg.actions.filter(a => a.selected && a.success).length}件追加しました
+                    </Text>
+                  )}
+                  {msg.actions.filter(a => a.selected && a.success === false).length > 0 && (
+                    <Text fontSize="xs" color="red.500">
+                      {msg.actions.filter(a => a.selected && a.success === false).length}件追加できませんでした
+                    </Text>
+                  )}
+                </VStack>
               )}
-              {msg.action && msg.action.confirmed === true && msg.action.success === false && (
-                <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
-              )}
-              {msg.action && msg.action.confirmed === false && (
+              {msg.actions && msg.actionsConfirmed === false && (
                 <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
               )}
             </Card.Body>
