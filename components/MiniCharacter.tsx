@@ -25,6 +25,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   const targetRef = useRef({ x: 30, y: 150 });
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const elementRef = useRef<HTMLDivElement | null>(null);
 
   // チャット開閉時に親に通知
   const handleChatOpen = () => {
@@ -155,27 +156,41 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     }
   }, []);
 
-  // タッチイベント
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handlePressStart(touch.clientX, touch.clientY);
-  }, [handlePressStart]);
+  // タッチイベント（passive: false で登録するためuseEffectで処理）
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (isDragging) {
-      e.preventDefault();
+    const handleTouchStart = (e: TouchEvent) => {
       const touch = e.touches[0];
-      handleDragMove(touch.clientX, touch.clientY);
-    } else {
-      // 長押し中に動いたらキャンセル
-      handlePressCancel();
-    }
-  }, [isDragging, handleDragMove, handlePressCancel]);
+      handlePressStart(touch.clientX, touch.clientY);
+    };
 
-  const handleTouchEnd = useCallback(() => {
-    handlePressCancel();
-    handleDragEnd();
-  }, [handlePressCancel, handleDragEnd]);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isDragging) {
+        e.preventDefault(); // passive: false なので動作する
+        const touch = e.touches[0];
+        handleDragMove(touch.clientX, touch.clientY);
+      } else {
+        handlePressCancel();
+      }
+    };
+
+    const handleTouchEnd = () => {
+      handlePressCancel();
+      handleDragEnd();
+    };
+
+    element.addEventListener("touchstart", handleTouchStart, { passive: true });
+    element.addEventListener("touchmove", handleTouchMove, { passive: false });
+    element.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener("touchstart", handleTouchStart);
+      element.removeEventListener("touchmove", handleTouchMove);
+      element.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [isDragging, handlePressStart, handleDragMove, handlePressCancel, handleDragEnd]);
 
   // マウスイベント
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -360,6 +375,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   return (
     <>
       <Box
+        ref={elementRef}
         position="fixed"
         left={`${position.x}px`}
         top={`${position.y}px`}
@@ -370,9 +386,6 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         className={`mini-character ${direction === "right" ? "face-right" : "face-left"}`}
         style={{
           transform: isGrabbed ? "scale(1.1)" : "scale(1)",
