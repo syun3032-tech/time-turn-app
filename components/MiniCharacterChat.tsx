@@ -1089,7 +1089,8 @@ ${CONTEXT_PROMPT}${taskInfo}
               borderRadius="full"
               bg="gray.100"
               color="gray.800"
-              _placeholder={{ color: "gray.500" }}
+              pl={4}
+              _placeholder={{ color: "gray.400" }}
               disabled={isLoading}
             />
             <IconButton
@@ -1200,7 +1201,8 @@ ${CONTEXT_PROMPT}${taskInfo}
               borderRadius="full"
               bg="gray.100"
               color="gray.800"
-              _placeholder={{ color: "gray.500" }}
+              pl={4}
+              _placeholder={{ color: "gray.400" }}
               disabled={isLoading}
             />
             <IconButton
