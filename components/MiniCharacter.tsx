@@ -26,6 +26,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const elementRef = useRef<HTMLDivElement | null>(null);
+  const lastDragEndTimeRef = useRef<number>(0); // ドラッグ終了時刻を記録
 
   // チャット開閉時に親に通知
   const handleChatOpen = () => {
@@ -133,6 +134,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   // ドラッグ終了
   const handleDragEnd = useCallback(() => {
     if (isDragging) {
+      lastDragEndTimeRef.current = Date.now(); // ドラッグ終了時刻を記録
       setIsDragging(false);
       setIsGrabbed(false);
       setIsManuallyPositioned(true);
@@ -367,6 +369,11 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
 
   // クリック処理（ドラッグ中でなければチャットを開く）
   const handleClick = useCallback(() => {
+    // ドラッグ終了直後（200ms以内）はクリックを無視
+    const timeSinceDragEnd = Date.now() - lastDragEndTimeRef.current;
+    if (timeSinceDragEnd < 200) {
+      return;
+    }
     if (!isDragging && !isGrabbed) {
       handleChatOpen();
     }
