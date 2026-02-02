@@ -1420,6 +1420,7 @@ export default function DashboardPage() {
               color="gray.900"
               fontWeight="medium"
               fontSize="md"
+              px={4}
               _placeholder={{ color: "gray.400" }}
             />
             <Button
@@ -1640,6 +1641,7 @@ export default function DashboardPage() {
                 fontSize="lg"
                 size="lg"
                 h="60px"
+                px={5}
                 _placeholder={{ color: "gray.400" }}
               />
               <Button
