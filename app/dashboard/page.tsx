@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Text, VStack, Input, Button, HStack, Badge, Card } from "@chakra-ui/react";
+import { Box, Text, VStack, Input, Button, HStack, Badge, Card, IconButton } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
 import { CharacterAvatar, getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
 import { useState, useEffect, useRef } from "react";
@@ -22,7 +22,7 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { NotificationPermission } from "@/components/NotificationPermission";
-import { FiSettings, FiMenu } from "react-icons/fi";
+import { FiSettings, FiMenu, FiSend } from "react-icons/fi";
 import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
 import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
 
@@ -1444,16 +1444,18 @@ export default function DashboardPage() {
               flex={1}
               _placeholder={{ color: "gray.400" }}
             />
-            <Button
+            <IconButton
+              aria-label="送信"
               colorScheme="teal"
               size="sm"
               onClick={handleSendMessage}
               loading={isLoading}
               disabled={!message.trim() || isLoading}
               flexShrink={0}
+              borderRadius="full"
             >
-              送信
-            </Button>
+              <FiSend />
+            </IconButton>
           </HStack>
 
           {/* タスク反映ボタン（output段階で会話がある時） */}
