@@ -935,13 +935,68 @@ function TasksPageContent() {
       <MiniCharacter
         onChatOpenChange={setIsMiniChatOpen}
         taskTree={tree}
-        onAddTask={(parentId, title) => {
+        onAddNode={(parentId, title, nodeType) => {
           const newNode: any = {
-            id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-            title: `Task: ${title}`,
-            ai: false,
-            status: "未着手",
+            id: `${nodeType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+            title: `${nodeType}: ${title}`,
+            type: nodeType,
+            children: nodeType === "Task" ? undefined : [],
           };
+
+          if (nodeType === "Task") {
+            newNode.ai = false;
+            newNode.status = "未着手";
+          }
+
+          // parentId が null の場合は新しい Goal をルートに追加
+          if (parentId === null) {
+            setTree([...tree, newNode]);
+            return;
+          }
+
+          // 親ノードの種類をチェック
+          const findNode = (nodes: any[], id: string): any | null => {
+            for (const node of nodes) {
+              if (node.id === id) return node;
+              if (node.children) {
+                const found = findNode(node.children, id);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+
+          const parentNode = findNode(tree, parentId);
+          if (parentNode) {
+            const parentType = parentNode.type ||
+              (parentNode.title?.startsWith("Goal:") ? "Goal" :
+               parentNode.title?.startsWith("Project:") ? "Project" :
+               parentNode.title?.startsWith("Milestone:") ? "Milestone" :
+               parentNode.title?.startsWith("Task:") ? "Task" : null);
+
+            // 階層バリデーション
+            const validChildTypes: Record<string, string> = {
+              "Goal": "Project",
+              "Project": "Milestone",
+              "Milestone": "Task",
+            };
+
+            if (parentType && validChildTypes[parentType] !== nodeType) {
+              console.warn(`階層エラー: ${parentType} の下に ${nodeType} は追加できません。`);
+              // 適切な階層に自動修正
+              const correctedType = validChildTypes[parentType];
+              if (correctedType) {
+                newNode.id = `${correctedType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+                newNode.title = `${correctedType}: ${title}`;
+                newNode.type = correctedType;
+                newNode.children = correctedType === "Task" ? undefined : [];
+                if (correctedType === "Task") {
+                  newNode.ai = false;
+                  newNode.status = "未着手";
+                }
+              }
+            }
+          }
 
           const updateTree = (nodes: any[]): any[] => {
             return nodes.map((node) => {
@@ -961,6 +1016,13 @@ function TasksPageContent() {
           };
 
           setTree(updateTree(tree));
+
+          // 親ノードを自動展開
+          setExpandedNodes((prev) => {
+            const newSet = new Set(prev);
+            newSet.add(parentId);
+            return newSet;
+          });
         }}
         onUpdateMemo={handleUpdateMemo}
       />

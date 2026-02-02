@@ -12,7 +12,7 @@ import {
   Button,
 } from "@chakra-ui/react";
 import { useState, useRef, useEffect } from "react";
-import { FiSend, FiX } from "react-icons/fi";
+import { FiSend, FiX, FiPlus, FiTrash2 } from "react-icons/fi";
 import { chatWithAISeamless } from "@/lib/ai-service";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -20,16 +20,25 @@ import {
   createConversation,
   addMessageToConversation,
   getConversationMessages,
+  updateConversationTitle,
+  deleteConversation,
 } from "@/lib/firebase/firestore";
+import type { Conversation } from "@/lib/firebase/firestore-types";
+import { ConfirmModal } from "./ConfirmModal";
+
+// ノードタイプの型定義
+type NodeType = "Goal" | "Project" | "Milestone" | "Task";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   action?: {
-    type: "add_task" | "add_memo";
+    type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo";
     parentId?: string;
     parentTitle?: string;
-    taskTitle?: string;
+    title?: string; // 追加するノードのタイトル
+    taskTitle?: string; // 後方互換性のため残す
+    nodeType?: NodeType; // 追加するノードの種類
     nodeId?: string;
     memo?: string;
     confirmed?: boolean;
@@ -42,6 +51,7 @@ interface MiniCharacterChatProps {
   onClose: () => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType) => void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
 }
 
@@ -114,27 +124,197 @@ function findNodeByIdOrTitle(tree: any[], search: string): any | null {
   return traverse(tree);
 }
 
-// AIレスポンスからアクション提案を解析
+// ノードの種類を判定
+function getNodeType(node: any): NodeType | null {
+  if (!node?.title) return null;
+  if (node.type === "Goal" || node.title.startsWith("Goal:")) return "Goal";
+  if (node.type === "Project" || node.title.startsWith("Project:")) return "Project";
+  if (node.type === "Milestone" || node.title.startsWith("Milestone:")) return "Milestone";
+  if (node.type === "Task" || node.title.startsWith("Task:")) return "Task";
+  return null;
+}
+
+// 親ノードの種類から、子ノードの種類を決定
+function getChildNodeType(parentType: NodeType | null): NodeType | null {
+  switch (parentType) {
+    case "Goal": return "Project";
+    case "Project": return "Milestone";
+    case "Milestone": return "Task";
+    case "Task": return null; // Task の下にはノードを追加しない（メモを使う）
+    default: return null;
+  }
+}
+
+// AIレスポンスからアクション提案を解析（階層ルール対応）
 function parseActionFromResponse(content: string, tree: any[]): { cleanContent: string; action?: Message["action"] } {
-  // タスク追加提案: [ADD_TASK:親の名前:タスク名]
+  // 全てのアクションタグを削除するための正規表現
+  const cleanAllTags = (text: string) => {
+    return text
+      .replace(/\[ADD_GOAL:[^\]]+\]/g, "")
+      .replace(/\[ADD_PROJECT:[^\]]+\]/g, "")
+      .replace(/\[ADD_MILESTONE:[^\]]+\]/g, "")
+      .replace(/\[ADD_TASK:[^\]]+\]/g, "")
+      .replace(/\[ADD_MEMO:[^\]]+\]/g, "")
+      .trim();
+  };
+
+  // Goal追加: [ADD_GOAL:目標名]
+  const goalMatch = content.match(/\[ADD_GOAL:([^\]]+)\]/);
+  if (goalMatch) {
+    const goalTitle = goalMatch[1].trim();
+    return {
+      cleanContent: cleanAllTags(content),
+      action: {
+        type: "add_goal",
+        title: goalTitle,
+        nodeType: "Goal",
+      }
+    };
+  }
+
+  // Project追加: [ADD_PROJECT:Goal名:Project名]
+  const projectMatch = content.match(/\[ADD_PROJECT:([^:]+):([^\]]+)\]/);
+  if (projectMatch) {
+    const parentSearch = projectMatch[1].trim();
+    const projectTitle = projectMatch[2].trim();
+    const parentNode = findNodeByIdOrTitle(tree, parentSearch);
+    const parentType = getNodeType(parentNode);
+
+    // 親がGoalでない場合はGoalとして追加を提案
+    if (parentNode && parentType !== "Goal") {
+      return {
+        cleanContent: cleanAllTags(content),
+        action: {
+          type: "add_goal",
+          title: projectTitle,
+          nodeType: "Goal",
+        }
+      };
+    }
+
+    return {
+      cleanContent: cleanAllTags(content),
+      action: {
+        type: "add_project",
+        parentId: parentNode?.id,
+        parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
+        title: projectTitle,
+        nodeType: "Project",
+      }
+    };
+  }
+
+  // Milestone追加: [ADD_MILESTONE:Project名:Milestone名]
+  const milestoneMatch = content.match(/\[ADD_MILESTONE:([^:]+):([^\]]+)\]/);
+  if (milestoneMatch) {
+    const parentSearch = milestoneMatch[1].trim();
+    const milestoneTitle = milestoneMatch[2].trim();
+    const parentNode = findNodeByIdOrTitle(tree, parentSearch);
+    const parentType = getNodeType(parentNode);
+
+    // 親がProjectでない場合は適切な階層を自動判定
+    if (parentNode && parentType !== "Project") {
+      if (parentType === "Goal") {
+        // Goalの下にはProjectを作ってその下にMilestoneを追加（シンプルにProjectとして追加）
+        return {
+          cleanContent: cleanAllTags(content),
+          action: {
+            type: "add_project",
+            parentId: parentNode.id,
+            parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
+            title: milestoneTitle,
+            nodeType: "Project",
+          }
+        };
+      } else if (parentType === "Milestone") {
+        // Milestoneの下にはTaskを追加
+        return {
+          cleanContent: cleanAllTags(content),
+          action: {
+            type: "add_task",
+            parentId: parentNode.id,
+            parentTitle: parentNode.title?.replace(/^Milestone:\s*/, "") || parentSearch,
+            title: milestoneTitle,
+            nodeType: "Task",
+          }
+        };
+      }
+    }
+
+    return {
+      cleanContent: cleanAllTags(content),
+      action: {
+        type: "add_milestone",
+        parentId: parentNode?.id,
+        parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
+        title: milestoneTitle,
+        nodeType: "Milestone",
+      }
+    };
+  }
+
+  // タスク追加: [ADD_TASK:Milestone名:Task名]
   const taskMatch = content.match(/\[ADD_TASK:([^:]+):([^\]]+)\]/);
   if (taskMatch) {
     const parentSearch = taskMatch[1].trim();
     const taskTitle = taskMatch[2].trim();
     const parentNode = findNodeByIdOrTitle(tree, parentSearch);
+    const parentType = getNodeType(parentNode);
+
+    // 親がMilestoneでない場合は適切な階層を自動判定
+    if (parentNode && parentType !== "Milestone") {
+      if (parentType === "Goal") {
+        // Goalの下にはProjectを追加
+        return {
+          cleanContent: cleanAllTags(content),
+          action: {
+            type: "add_project",
+            parentId: parentNode.id,
+            parentTitle: parentNode.title?.replace(/^Goal:\s*/, "") || parentSearch,
+            title: taskTitle,
+            nodeType: "Project",
+          }
+        };
+      } else if (parentType === "Project") {
+        // Projectの下にはMilestoneを追加
+        return {
+          cleanContent: cleanAllTags(content),
+          action: {
+            type: "add_milestone",
+            parentId: parentNode.id,
+            parentTitle: parentNode.title?.replace(/^Project:\s*/, "") || parentSearch,
+            title: taskTitle,
+            nodeType: "Milestone",
+          }
+        };
+      } else if (parentType === "Task") {
+        // Taskの下にはメモを追加
+        return {
+          cleanContent: cleanAllTags(content),
+          action: {
+            type: "add_memo",
+            nodeId: parentNode.id,
+            parentTitle: parentNode.title?.replace(/^Task:\s*/, "") || parentSearch,
+            memo: taskTitle,
+          }
+        };
+      }
+    }
 
     return {
-      cleanContent: content.replace(/\[ADD_TASK:[^\]]+\]/g, "").trim(),
+      cleanContent: cleanAllTags(content),
       action: {
         type: "add_task",
         parentId: parentNode?.id,
         parentTitle: parentNode?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || parentSearch,
-        taskTitle,
+        title: taskTitle,
+        taskTitle: taskTitle, // 後方互換性
+        nodeType: "Task",
       }
     };
   }
 
-  // メモ追加提案: [ADD_MEMO:ノード名:メモ内容]
+  // メモ追加: [ADD_MEMO:ノード名:メモ内容]
   const memoMatch = content.match(/\[ADD_MEMO:([^:]+):([^\]]+)\]/);
   if (memoMatch) {
     const nodeSearch = memoMatch[1].trim();
@@ -142,7 +322,7 @@ function parseActionFromResponse(content: string, tree: any[]): { cleanContent: 
     const node = findNodeByIdOrTitle(tree, nodeSearch);
 
     return {
-      cleanContent: content.replace(/\[ADD_MEMO:[^\]]+\]/g, "").trim(),
+      cleanContent: cleanAllTags(content),
       action: {
         type: "add_memo",
         nodeId: node?.id,
@@ -157,10 +337,20 @@ function parseActionFromResponse(content: string, tree: any[]): { cleanContent: 
 
 const CONTEXT_PROMPT = "ユーザーは現在「目標管理」画面を見ています。目標やタスクの進捗、やる気、困っていることについて優しくサポートしてください。";
 
-// 共有会話のタイトル（ホーム画面と共有するため固定）
-const SHARED_CONVERSATION_TITLE = "秘書ちゃんとの会話";
+// 日付フォーマット
+function formatDate(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
 
-export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpdateMemo }: MiniCharacterChatProps) {
+  if (diffDays === 0) return "今日";
+  if (diffDays === 1) return "昨日";
+  if (diffDays < 7) return `${diffDays}日前`;
+  return date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+}
+
+export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo }: MiniCharacterChatProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -170,47 +360,46 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
 
-  // 会話履歴を読み込む（または新規作成）
+  // 履歴選択モード（吹き出し内で表示）
+  const [showHistoryPicker, setShowHistoryPicker] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  // 会話履歴を読み込む
+  const loadConversations = async () => {
+    if (!user) return;
+    try {
+      // ミニ秘書の会話のみ取得
+      const convs = await getConversations(user.uid, 'mini');
+      setConversations(convs);
+    } catch (error) {
+      console.error("Failed to load conversations:", error);
+    }
+  };
+
+  // 初期化時に会話一覧を読み込む
   useEffect(() => {
     if (!user || initializedRef.current) return;
 
-    const loadOrCreateConversation = async () => {
+    const initialize = async () => {
       setIsLoadingHistory(true);
       try {
-        // 既存の共有会話を探す
-        const conversations = await getConversations(user.uid);
-        const sharedConv = conversations.find(c => c.title === SHARED_CONVERSATION_TITLE);
-
-        if (sharedConv) {
-          // 既存の会話からメッセージを読み込む
-          setConversationId(sharedConv.id);
-          const historyMessages = await getConversationMessages(sharedConv.id);
-          if (historyMessages.length > 0) {
-            setMessages(historyMessages.map(m => ({
-              role: m.role,
-              content: m.content,
-            })));
-          }
-        } else {
-          // 新規会話を作成
-          const newConvId = await createConversation(user.uid, SHARED_CONVERSATION_TITLE);
-          setConversationId(newConvId);
-        }
+        await loadConversations();
         initializedRef.current = true;
       } catch (error) {
-        console.error("Failed to load conversation:", error);
+        console.error("Failed to initialize:", error);
       } finally {
         setIsLoadingHistory(false);
       }
     };
 
-    loadOrCreateConversation();
+    initialize();
   }, [user]);
 
   // 初回オープン時に挨拶（履歴がない場合のみ）
   useEffect(() => {
     // 履歴読み込み中、または既にメッセージがある場合はスキップ
-    if (isLoadingHistory || !initializedRef.current || messages.length > 0) return;
+    if (isLoadingHistory || !initializedRef.current || messages.length > 0 || conversationId) return;
 
     let greeting = "";
 
@@ -233,17 +422,86 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
       greeting = "目標やタスクについて話しましょう。何か達成したいことはありますか？";
     }
 
-    // 挨拶をセットしてFirestoreにも保存
+    // 挨拶をセット
     setMessages([{ role: "assistant", content: greeting }]);
-    if (conversationId) {
-      addMessageToConversation(conversationId, "assistant", greeting).catch(console.error);
-    }
-  }, [isLoadingHistory, taskTree, conversationId]);
+  }, [isLoadingHistory, taskTree, conversationId, messages.length]);
 
   // 自動スクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // 会話選択
+  const handleSelectConversation = async (convId: string) => {
+    if (!user) return;
+
+    try {
+      setConversationId(convId);
+      const historyMessages = await getConversationMessages(convId);
+      if (historyMessages.length > 0) {
+        setMessages(historyMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })));
+      } else {
+        setMessages([]);
+      }
+      setShowHistoryPicker(false);
+    } catch (error) {
+      console.error("Failed to load conversation:", error);
+    }
+  };
+
+  // 新規チャット作成
+  const handleNewChat = async () => {
+    if (!user) return;
+
+    try {
+      const newConvId = await createConversation(user.uid, '新しいチャット', 'mini');
+      setConversationId(newConvId);
+      setMessages([]);
+
+      // 挨拶を生成
+      let greeting = "";
+      if (taskTree && taskTree.length > 0) {
+        const incompleteTasks = getIncompleteTasks(taskTree);
+        if (incompleteTasks.length > 0) {
+          const randomTask = incompleteTasks[Math.floor(Math.random() * incompleteTasks.length)];
+          const taskName = randomTask.title.replace(/^(Task:|Milestone:|Project:|Goal:)\s*/, "");
+          greeting = `「${taskName}」、進捗どうですか？`;
+        } else {
+          greeting = "タスク全部完了してますね。次の目標はありますか？";
+        }
+      } else {
+        greeting = "何か達成したいことはありますか？";
+      }
+
+      setMessages([{ role: "assistant", content: greeting }]);
+      await addMessageToConversation(newConvId, "assistant", greeting);
+      await loadConversations();
+      setShowHistoryPicker(false);
+    } catch (error) {
+      console.error("Failed to create new chat:", error);
+    }
+  };
+
+  // 会話削除
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      await deleteConversation(convId);
+
+      // 削除した会話が現在表示中ならクリア
+      if (conversationId === convId) {
+        setConversationId(null);
+        setMessages([]);
+      }
+
+      await loadConversations();
+      setDeleteTargetId(null);
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+    }
+  };
 
   // アクション確認ハンドラー
   const handleConfirmAction = (msgIndex: number, confirm: boolean) => {
@@ -253,19 +511,67 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
     let actionSuccess = false;
 
     if (confirm) {
-      if (msg.action.type === "add_task" && msg.action.taskTitle && onAddTask) {
-        if (msg.action.parentId) {
-          onAddTask(msg.action.parentId, msg.action.taskTitle);
-          actionSuccess = true;
-        } else {
-          console.error("親ノードが見つかりませんでした:", msg.action.parentTitle);
+      const action = msg.action;
+      const title = action.title || action.taskTitle || "";
+
+      // 新しい onAddNode を使う場合
+      if (onAddNode) {
+        switch (action.type) {
+          case "add_goal":
+            if (title) {
+              onAddNode(null, title, "Goal");
+              actionSuccess = true;
+            }
+            break;
+          case "add_project":
+            if (action.parentId && title) {
+              onAddNode(action.parentId, title, "Project");
+              actionSuccess = true;
+            } else if (!action.parentId) {
+              console.error("親ノード（Goal）が見つかりませんでした:", action.parentTitle);
+            }
+            break;
+          case "add_milestone":
+            if (action.parentId && title) {
+              onAddNode(action.parentId, title, "Milestone");
+              actionSuccess = true;
+            } else if (!action.parentId) {
+              console.error("親ノード（Project）が見つかりませんでした:", action.parentTitle);
+            }
+            break;
+          case "add_task":
+            if (action.parentId && title) {
+              onAddNode(action.parentId, title, "Task");
+              actionSuccess = true;
+            } else if (!action.parentId) {
+              console.error("親ノード（Milestone）が見つかりませんでした:", action.parentTitle);
+            }
+            break;
+          case "add_memo":
+            if (action.nodeId && action.memo && onUpdateMemo) {
+              onUpdateMemo(action.nodeId, action.memo);
+              actionSuccess = true;
+            } else if (!action.nodeId) {
+              console.error("ノードが見つかりませんでした:", action.parentTitle);
+            }
+            break;
         }
-      } else if (msg.action.type === "add_memo" && msg.action.memo && onUpdateMemo) {
-        if (msg.action.nodeId) {
-          onUpdateMemo(msg.action.nodeId, msg.action.memo);
-          actionSuccess = true;
-        } else {
-          console.error("ノードが見つかりませんでした:", msg.action.parentTitle);
+      } else {
+        // 後方互換性: 古い onAddTask を使う場合
+        if (action.type === "add_task" && title && onAddTask) {
+          if (action.parentId) {
+            onAddTask(action.parentId, title);
+            actionSuccess = true;
+          } else {
+            console.error("親ノードが見つかりませんでした:", action.parentTitle);
+          }
+        } else if (action.type === "add_memo" && action.memo && onUpdateMemo) {
+          if (action.nodeId) {
+            onUpdateMemo(action.nodeId, action.memo);
+            actionSuccess = true;
+          } else {
+            console.error("ノードが見つかりませんでした:", action.parentTitle);
+          }
         }
       }
     }
@@ -279,7 +585,10 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !user) return;
+
+    // 履歴選択モードを閉じる
+    setShowHistoryPicker(false);
 
     const userMessage: Message = { role: "user", content: input };
     const newMessages = [...messages, userMessage];
@@ -287,9 +596,28 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onUpda
     setInput("");
     setIsLoading(true);
 
+    // 会話IDがなければ新規作成
+    let convId = conversationId;
+    if (!convId) {
+      try {
+        convId = await createConversation(user.uid, '新しいチャット', 'mini');
+        setConversationId(convId);
+      } catch (error) {
+        console.error("Failed to create conversation:", error);
+      }
+    }
+
     // ユーザーメッセージをFirestoreに保存
-    if (conversationId) {
-      addMessageToConversation(conversationId, "user", input).catch(console.error);
+    if (convId) {
+      addMessageToConversation(convId, "user", input).catch(console.error);
+
+      // 最初のユーザーメッセージならタイトルを自動生成（20文字で切り詰め）
+      const userMessagesCount = newMessages.filter(m => m.role === "user").length;
+      if (userMessagesCount === 1) {
+        const title = input.length > 20 ? input.substring(0, 20) + "..." : input;
+        updateConversationTitle(convId, title, false).catch(console.error);
+        loadConversations();
+      }
     }
 
     try {
@@ -313,15 +641,52 @@ ${treeText}
 - モチベーション維持のサポート
 - 振り返りの促進
 
+【タスク追加の階層ルール - 超重要!!!】
+Goal → Project → Milestone → Task の階層を必ず守ること。
+
+■ 階層の意味
+- Goal: 最終目標（例: 国立理系に合格する、TOEIC800点突破）
+- Project: 目標達成のための大きな取り組み（例: 共通テスト対策、リスニング強化）
+- Milestone: 中間目標・フェーズ（例: 数学基礎固め、Part1-4対策）
+- Task: 具体的なアクション（例: 基礎問題集1-3章、過去問1年分）
+
+■ ヒアリングして自動判断
+ユーザーが「○○したい」「○○を追加して」と言った場合：
+1. それが何のため？（既存のGoalに紐づく？新しい目標？）
+2. どの粒度？（大きな取り組み？具体的なアクション？）
+をヒアリングして、適切な階層を自分で判断すること。
+「どのレベルですか？」とは聞かない。会話から判断する。
+
+■ 割れるものは割る
+「調べる」のような曖昧なものも、可能ならMilestone/Taskに分解する。
+例: 「React勉強したい」→ Project「React学習」、Milestone「基礎理解」「実践」、Task「公式チュートリアル」「Hooks理解」
+
 【タスク/メモ追加時の特殊フォーマット】
 ユーザーが新しいタスクやメモの追加に同意した場合のみ、以下の形式で返答の最後に追加してください：
-- タスク追加: [ADD_TASK:親のMilestone名やProject名:新しいタスク名]
-- メモ追加: [ADD_MEMO:対象のタスク名:メモ内容]
 
-例: 「じゃあ追加しとくね！[ADD_TASK:数学基礎固め:模試の復習]」
-例: 「メモ残しとくね！[ADD_MEMO:基礎問題集1-3章:明日までに1章終わらせる]」
+■ 新しい目標を追加
+[ADD_GOAL:目標名]
 
-※ユーザーが明確に同意していない場合は、このフォーマットを使わないでください。`;
+■ Goal の下に Project を追加
+[ADD_PROJECT:Goal名:Project名]
+
+■ Project の下に Milestone を追加
+[ADD_MILESTONE:Project名:Milestone名]
+
+■ Milestone の下に Task を追加
+[ADD_TASK:Milestone名:Task名]
+
+■ Task の下にサブタスク的メモを追加
+[ADD_MEMO:Task名:メモ内容]
+
+例: 「じゃあGoalとして追加しとくね！[ADD_GOAL:TOEIC800点突破]」
+例: 「Projectとして追加！[ADD_PROJECT:TOEIC800点突破:リスニング強化]」
+例: 「Milestoneとして追加！[ADD_MILESTONE:リスニング強化:Part1-4対策]」
+例: 「タスクとして追加！[ADD_TASK:Part1-4対策:公式問題集Part1]」
+例: 「メモ残しとくね！[ADD_MEMO:公式問題集Part1:明日までに5問解く]」
+
+※ユーザーが明確に同意していない場合は、このフォーマットを使わないでください。
+※ Goal に直接 Task は追加しない。必ず階層を守る。`;
       }
 
       const systemPrompt = `あなたは「秘書ちゃん」。ユーザーの目標達成を支援するAIです。
@@ -386,29 +751,239 @@ ${CONTEXT_PROMPT}${taskInfo}
         const { cleanContent, action } = parseActionFromResponse(response.content, taskTree || []);
         setMessages([...newMessages, { role: "assistant", content: cleanContent, action }]);
         // AIの返答をFirestoreに保存
-        if (conversationId) {
-          addMessageToConversation(conversationId, "assistant", cleanContent).catch(console.error);
+        if (convId) {
+          addMessageToConversation(convId, "assistant", cleanContent).catch(console.error);
         }
       } else {
         const errorMsg = "…すみません、ちょっと調子悪いみたいです。もう一度言ってもらえますか？";
         setMessages([...newMessages, { role: "assistant", content: errorMsg }]);
-        if (conversationId) {
-          addMessageToConversation(conversationId, "assistant", errorMsg).catch(console.error);
+        if (convId) {
+          addMessageToConversation(convId, "assistant", errorMsg).catch(console.error);
         }
       }
     } catch {
       const errorMsg = "はぁ…エラーが起きてしまいました。私のせいじゃないですからね。";
       setMessages([...newMessages, { role: "assistant", content: errorMsg }]);
-      if (conversationId) {
-        addMessageToConversation(conversationId, "assistant", errorMsg).catch(console.error);
+      if (convId) {
+        addMessageToConversation(convId, "assistant", errorMsg).catch(console.error);
       }
     } finally {
       setIsLoading(false);
     }
   };
 
+  // 履歴選択の吹き出しコンポーネント
+  const HistoryPickerBubble = () => (
+    <Box
+      alignSelf="flex-start"
+      maxW="95%"
+      w="100%"
+    >
+      <Card.Root
+        bg="white"
+        shadow="md"
+        borderRadius="xl"
+        border="2px solid"
+        borderColor="teal.200"
+      >
+        <Card.Body py={3} px={4}>
+          {/* 秘書ちゃんの質問 */}
+          <Text fontSize="sm" color="gray.800" fontWeight="bold" mb={3}>
+            どの話の続きにします？
+          </Text>
+
+          {/* 新規チャットボタン */}
+          <Button
+            w="100%"
+            size="sm"
+            colorScheme="teal"
+            variant="outline"
+            mb={2}
+            onClick={handleNewChat}
+            borderStyle="dashed"
+          >
+            <FiPlus />
+            <Text ml={2}>新しく話す</Text>
+          </Button>
+
+          {/* 履歴一覧 */}
+          {conversations.length > 0 && (
+            <VStack gap={1} align="stretch" maxH="200px" overflowY="auto">
+              {conversations.map((conv) => (
+                <HStack
+                  key={conv.id}
+                  p={2}
+                  borderRadius="md"
+                  bg={conversationId === conv.id ? "teal.50" : "gray.50"}
+                  _hover={{ bg: "teal.50" }}
+                  cursor="pointer"
+                  onClick={() => handleSelectConversation(conv.id)}
+                >
+                  <Text fontSize="lg" mr={1}>📌</Text>
+                  <VStack align="start" gap={0} flex={1}>
+                    <Text
+                      fontSize="sm"
+                      fontWeight={conversationId === conv.id ? "bold" : "normal"}
+                      color="gray.800"
+                      lineClamp={1}
+                    >
+                      {conv.title}
+                    </Text>
+                    <Text fontSize="xs" color="gray.500">
+                      {formatDate(conv.updatedAt)}
+                    </Text>
+                  </VStack>
+                  <IconButton
+                    aria-label="削除"
+                    size="xs"
+                    variant="ghost"
+                    color="gray.400"
+                    _hover={{ color: "red.500" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTargetId(conv.id);
+                    }}
+                  >
+                    <FiTrash2 size={14} />
+                  </IconButton>
+                </HStack>
+              ))}
+            </VStack>
+          )}
+
+          {conversations.length === 0 && (
+            <Text fontSize="xs" color="gray.400" textAlign="center" py={2}>
+              まだ履歴がありません
+            </Text>
+          )}
+
+          {/* キャンセルボタン */}
+          <Button
+            w="100%"
+            size="xs"
+            variant="ghost"
+            mt={2}
+            color="gray.500"
+            onClick={() => setShowHistoryPicker(false)}
+          >
+            やっぱりこのまま続ける
+          </Button>
+        </Card.Body>
+      </Card.Root>
+    </Box>
+  );
+
+  // メッセージ表示コンポーネント
+  const MessageList = () => (
+    <VStack gap={3} align="stretch">
+      {/* 履歴選択モードの場合、最初に吹き出しを表示 */}
+      {showHistoryPicker && <HistoryPickerBubble />}
+
+      {/* 通常のメッセージ */}
+      {!showHistoryPicker && messages.map((msg, idx) => (
+        <Box
+          key={idx}
+          alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
+          maxW="85%"
+        >
+          <Card.Root
+            bg={msg.role === "user" ? "teal.500" : "white"}
+            shadow="sm"
+            borderRadius="xl"
+          >
+            <Card.Body py={2} px={3}>
+              <Text
+                fontSize="sm"
+                color={msg.role === "user" ? "white" : "gray.800"}
+              >
+                {msg.content}
+              </Text>
+              {/* アクション確認UI */}
+              {msg.action && msg.action.confirmed === undefined && (
+                <VStack align="stretch" mt={2} gap={1}>
+                  <Box bg="teal.50" p={2} borderRadius="md">
+                    <Text fontSize="xs" color="teal.700" fontWeight="bold">
+                      {msg.action.type === "add_goal" ? "Goal追加" :
+                       msg.action.type === "add_project" ? "Project追加" :
+                       msg.action.type === "add_milestone" ? "Milestone追加" :
+                       msg.action.type === "add_task" ? "Task追加" : "メモ追加"}
+                    </Text>
+                    <Text fontSize="xs" color="gray.600">
+                      {msg.action.type === "add_goal"
+                        ? `新しい目標「${msg.action.title}」を追加`
+                        : msg.action.type === "add_project"
+                        ? `「${msg.action.parentTitle}」に Project「${msg.action.title}」を追加`
+                        : msg.action.type === "add_milestone"
+                        ? `「${msg.action.parentTitle}」に Milestone「${msg.action.title}」を追加`
+                        : msg.action.type === "add_task"
+                        ? `「${msg.action.parentTitle}」に Task「${msg.action.title || msg.action.taskTitle}」を追加`
+                        : `「${msg.action.parentTitle}」にメモ追加`}
+                    </Text>
+                  </Box>
+                  <HStack gap={2}>
+                    <Button
+                      size="xs"
+                      colorScheme="teal"
+                      flex={1}
+                      onClick={() => handleConfirmAction(idx, true)}
+                    >
+                      追加する
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      flex={1}
+                      onClick={() => handleConfirmAction(idx, false)}
+                    >
+                      やめる
+                    </Button>
+                  </HStack>
+                </VStack>
+              )}
+              {msg.action && msg.action.confirmed === true && msg.action.success === true && (
+                <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
+              )}
+              {msg.action && msg.action.confirmed === true && msg.action.success === false && (
+                <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
+              )}
+              {msg.action && msg.action.confirmed === false && (
+                <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
+              )}
+            </Card.Body>
+          </Card.Root>
+        </Box>
+      ))}
+      {isLoading && (
+        <Box alignSelf="flex-start" maxW="85%">
+          <Card.Root bg="white" shadow="sm" borderRadius="xl">
+            <Card.Body py={2} px={3}>
+              <Text fontSize="sm" color="gray.500">...</Text>
+            </Card.Body>
+          </Card.Root>
+        </Box>
+      )}
+      <div ref={messagesEndRef} />
+    </VStack>
+  );
+
   return (
     <>
+      {/* 削除確認モーダル */}
+      <ConfirmModal
+        isOpen={deleteTargetId !== null}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={() => {
+          if (deleteTargetId) {
+            handleDeleteConversation(deleteTargetId);
+          }
+        }}
+        title="チャットを削除"
+        message="このチャットを削除しますか？削除すると元に戻せません。"
+        confirmText="削除する"
+        cancelText="キャンセル"
+        confirmColorScheme="red"
+      />
+
       {/* 背景オーバーレイ */}
       {isOpen && (
         <Box
@@ -451,6 +1026,14 @@ ${CONTEXT_PROMPT}${taskInfo}
                 borderRadius="full"
                 bg="white"
                 overflow="hidden"
+                cursor="pointer"
+                onClick={() => {
+                  loadConversations();
+                  setShowHistoryPicker(!showHistoryPicker);
+                }}
+                _hover={{ opacity: 0.8 }}
+                border={showHistoryPicker ? "2px solid" : "none"}
+                borderColor="yellow.300"
               >
                 <Image
                   src="/hisyochan-icon.png"
@@ -464,6 +1047,9 @@ ${CONTEXT_PROMPT}${taskInfo}
               <VStack align="start" gap={0}>
                 <Text color="white" fontWeight="bold" fontSize="md">
                   秘書ちゃん
+                </Text>
+                <Text color="whiteAlpha.800" fontSize="xs">
+                  {showHistoryPicker ? "履歴を選んでね" : "タップで履歴"}
                 </Text>
               </VStack>
             </HStack>
@@ -482,82 +1068,7 @@ ${CONTEXT_PROMPT}${taskInfo}
 
         {/* メッセージエリア */}
         <Box flex={1} overflowY="auto" p={4} bg="gray.50">
-          <VStack gap={3} align="stretch">
-            {messages.map((msg, idx) => (
-              <Box
-                key={idx}
-                alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
-                maxW="85%"
-              >
-                <Card.Root
-                  bg={msg.role === "user" ? "teal.500" : "white"}
-                  shadow="sm"
-                  borderRadius="xl"
-                >
-                  <Card.Body py={2} px={3}>
-                    <Text
-                      fontSize="sm"
-                      color={msg.role === "user" ? "white" : "gray.800"}
-                    >
-                      {msg.content}
-                    </Text>
-                    {/* アクション確認UI */}
-                    {msg.action && msg.action.confirmed === undefined && (
-                      <VStack align="stretch" mt={2} gap={1}>
-                        <Box bg="teal.50" p={2} borderRadius="md">
-                          <Text fontSize="xs" color="teal.700" fontWeight="bold">
-                            {msg.action.type === "add_task" ? "タスク追加" : "メモ追加"}
-                          </Text>
-                          <Text fontSize="xs" color="gray.600">
-                            {msg.action.type === "add_task"
-                              ? `「${msg.action.parentTitle}」に「${msg.action.taskTitle}」を追加`
-                              : `「${msg.action.parentTitle}」にメモ追加`}
-                          </Text>
-                        </Box>
-                        <HStack gap={2}>
-                          <Button
-                            size="xs"
-                            colorScheme="teal"
-                            flex={1}
-                            onClick={() => handleConfirmAction(idx, true)}
-                          >
-                            追加する
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            flex={1}
-                            onClick={() => handleConfirmAction(idx, false)}
-                          >
-                            やめる
-                          </Button>
-                        </HStack>
-                      </VStack>
-                    )}
-                    {msg.action && msg.action.confirmed === true && msg.action.success === true && (
-                      <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
-                    )}
-                    {msg.action && msg.action.confirmed === true && msg.action.success === false && (
-                      <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
-                    )}
-                    {msg.action && msg.action.confirmed === false && (
-                      <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
-                    )}
-                  </Card.Body>
-                </Card.Root>
-              </Box>
-            ))}
-            {isLoading && (
-              <Box alignSelf="flex-start" maxW="85%">
-                <Card.Root bg="white" shadow="sm" borderRadius="xl">
-                  <Card.Body py={2} px={3}>
-                    <Text fontSize="sm" color="gray.500">...</Text>
-                  </Card.Body>
-                </Card.Root>
-              </Box>
-            )}
-            <div ref={messagesEndRef} />
-          </VStack>
+          <MessageList />
         </Box>
 
         {/* 入力エリア */}
@@ -621,6 +1132,14 @@ ${CONTEXT_PROMPT}${taskInfo}
                 borderRadius="full"
                 bg="white"
                 overflow="hidden"
+                cursor="pointer"
+                onClick={() => {
+                  loadConversations();
+                  setShowHistoryPicker(!showHistoryPicker);
+                }}
+                _hover={{ opacity: 0.8 }}
+                border={showHistoryPicker ? "2px solid" : "none"}
+                borderColor="yellow.300"
               >
                 <Image
                   src="/hisyochan-icon.png"
@@ -634,6 +1153,9 @@ ${CONTEXT_PROMPT}${taskInfo}
               <VStack align="start" gap={0}>
                 <Text color="white" fontWeight="bold" fontSize="md">
                   秘書ちゃん
+                </Text>
+                <Text color="whiteAlpha.800" fontSize="xs">
+                  {showHistoryPicker ? "履歴を選んでね" : "アイコンタップで履歴"}
                 </Text>
               </VStack>
             </HStack>
@@ -657,84 +1179,7 @@ ${CONTEXT_PROMPT}${taskInfo}
           p={4}
           bg="gray.50"
         >
-          <VStack gap={3} align="stretch">
-            {messages.map((msg, idx) => (
-              <Box
-                key={idx}
-                alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
-                maxW="90%"
-              >
-                <Card.Root
-                  bg={msg.role === "user" ? "teal.500" : "white"}
-                  shadow="sm"
-                  borderRadius="xl"
-                >
-                  <Card.Body py={2} px={3}>
-                    <Text
-                      fontSize="sm"
-                      color={msg.role === "user" ? "white" : "gray.800"}
-                    >
-                      {msg.content}
-                    </Text>
-                    {/* アクション確認UI */}
-                    {msg.action && msg.action.confirmed === undefined && (
-                      <VStack align="stretch" mt={2} gap={1}>
-                        <Box bg="teal.50" p={2} borderRadius="md">
-                          <Text fontSize="xs" color="teal.700" fontWeight="bold">
-                            {msg.action.type === "add_task" ? "タスク追加" : "メモ追加"}
-                          </Text>
-                          <Text fontSize="xs" color="gray.600">
-                            {msg.action.type === "add_task"
-                              ? `「${msg.action.parentTitle}」に「${msg.action.taskTitle}」を追加`
-                              : `「${msg.action.parentTitle}」にメモ追加`}
-                          </Text>
-                        </Box>
-                        <HStack gap={2}>
-                          <Button
-                            size="xs"
-                            colorScheme="teal"
-                            flex={1}
-                            onClick={() => handleConfirmAction(idx, true)}
-                          >
-                            追加する
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            flex={1}
-                            onClick={() => handleConfirmAction(idx, false)}
-                          >
-                            やめる
-                          </Button>
-                        </HStack>
-                      </VStack>
-                    )}
-                    {msg.action && msg.action.confirmed === true && msg.action.success === true && (
-                      <Text fontSize="xs" color="green.500" mt={1}>追加しました</Text>
-                    )}
-                    {msg.action && msg.action.confirmed === true && msg.action.success === false && (
-                      <Text fontSize="xs" color="red.500" mt={1}>追加できませんでした（親タスクが見つかりません）</Text>
-                    )}
-                    {msg.action && msg.action.confirmed === false && (
-                      <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
-                    )}
-                  </Card.Body>
-                </Card.Root>
-              </Box>
-            ))}
-            {isLoading && (
-              <Box alignSelf="flex-start" maxW="90%">
-                <Card.Root bg="white" shadow="sm" borderRadius="xl">
-                  <Card.Body py={2} px={3}>
-                    <Text fontSize="sm" color="gray.500">
-                      ...
-                    </Text>
-                  </Card.Body>
-                </Card.Root>
-              </Box>
-            )}
-            <div ref={messagesEndRef} />
-          </VStack>
+          <MessageList />
         </Box>
 
         {/* 入力エリア */}

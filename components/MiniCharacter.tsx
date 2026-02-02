@@ -7,14 +7,18 @@ import { MiniCharacterChat } from "./MiniCharacterChat";
 const STORAGE_KEY = "miniCharacterPosition";
 const LONG_PRESS_DURATION = 500; // 長押し判定時間（ms）
 
+// ノードタイプの型定義
+type NodeType = "Goal" | "Project" | "Milestone" | "Task";
+
 interface MiniCharacterProps {
   onChatOpenChange?: (isOpen: boolean) => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType) => void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
 }
 
-export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateMemo }: MiniCharacterProps) {
+export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode, onUpdateMemo }: MiniCharacterProps) {
   const [position, setPosition] = useState({ x: 30, y: 150 });
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -29,15 +33,23 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
   const lastDragEndTimeRef = useRef<number>(0); // ドラッグ終了時刻を記録
 
   // チャット開閉時に親に通知
-  const handleChatOpen = () => {
+  const handleChatOpen = useCallback(() => {
+    // チャットを開く前にドラッグ状態を完全にリセット
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setIsDragging(false);
+    setIsGrabbed(false);
+
     setIsChatOpen(true);
     onChatOpenChange?.(true);
-  };
+  }, [onChatOpenChange]);
 
-  const handleChatClose = () => {
+  const handleChatClose = useCallback(() => {
     setIsChatOpen(false);
     onChatOpenChange?.(false);
-  };
+  }, [onChatOpenChange]);
 
   // 画面サイズに基づいて移動範囲を計算
   const getSafeBounds = () => {
@@ -206,9 +218,12 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
 
   // グローバルマウスイベント（ドラッグ中）
   useEffect(() => {
-    if (!isDragging) return;
+    // チャットが開いている場合はドラッグを無効化
+    if (!isDragging || isChatOpen) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      // チャットが開いている場合は無視
+      if (isChatOpen) return;
       handleDragMove(e.clientX, e.clientY);
     };
 
@@ -224,7 +239,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, handleDragMove, handleDragEnd, handlePressCancel]);
+  }, [isDragging, isChatOpen, handleDragMove, handleDragEnd, handlePressCancel]);
 
   // 自動移動をリセット（ダブルタップで）
   const handleDoubleClick = useCallback(() => {
@@ -373,6 +388,8 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
 
   // クリック処理（ドラッグ中でなければチャットを開く）
   const handleClick = useCallback(() => {
+    // チャットが開いている場合は無視
+    if (isChatOpen) return;
     // ドラッグ終了直後（200ms以内）はクリックを無視
     const timeSinceDragEnd = Date.now() - lastDragEndTimeRef.current;
     if (timeSinceDragEnd < 200) {
@@ -381,7 +398,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
     if (!isDragging && !isGrabbed) {
       handleChatOpen();
     }
-  }, [isDragging, isGrabbed, handleChatOpen]);
+  }, [isChatOpen, isDragging, isGrabbed, handleChatOpen]);
 
   return (
     <>
@@ -403,6 +420,8 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
           transition: isDragging ? "none" : "transform 0.2s ease",
           filter: isGrabbed ? "drop-shadow(0 4px 8px rgba(0,0,0,0.3))" : "none",
           touchAction: "none", // タッチ操作のスクロール防止
+          pointerEvents: isChatOpen ? "none" : "auto", // チャット中はポインターイベント無効
+          opacity: isChatOpen ? 0.7 : 1, // チャット中は少し薄く
         }}
       />
       <MiniCharacterChat
@@ -410,6 +429,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onUpdateM
         onClose={handleChatClose}
         taskTree={taskTree}
         onAddTask={onAddTask}
+        onAddNode={onAddNode}
         onUpdateMemo={onUpdateMemo}
       />
     </>
