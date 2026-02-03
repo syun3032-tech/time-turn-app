@@ -547,6 +547,40 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
     }
   };
 
+  // AI要約でタイトル生成（2往復分を要約）
+  const generateSummaryTitle = async (msgs: Message[], convId: string) => {
+    try {
+      const conversationText = msgs
+        .map(m => `${m.role === "user" ? "ユーザー" : "秘書ちゃん"}: ${m.content}`)
+        .join("\n");
+
+      const summaryResponse = await chatWithAISeamless([
+        {
+          role: "user",
+          content: `以下の会話の内容を10文字以内で要約してタイトルにしてください。
+要約のみを出力し、「」や説明は不要です。
+
+会話:
+${conversationText}`,
+        },
+      ]);
+
+      if (summaryResponse.success && summaryResponse.content) {
+        // 余計な記号を除去して15文字に制限
+        let title = summaryResponse.content
+          .replace(/[「」『』【】]/g, "")
+          .trim();
+        if (title.length > 15) {
+          title = title.substring(0, 15) + "...";
+        }
+        await updateConversationTitle(convId, title, false);
+        loadConversations();
+      }
+    } catch (error) {
+      console.error("Failed to generate summary title:", error);
+    }
+  };
+
   // 個別アクションの選択切り替え
   const handleToggleAction = (msgIndex: number, actionIndex: number) => {
     setMessages(prev => prev.map((m, i) => {
@@ -662,11 +696,11 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
     if (convId) {
       addMessageToConversation(convId, "user", input).catch(console.error);
 
-      // 最初のユーザーメッセージならタイトルを自動生成（20文字で切り詰め）
+      // 最初のユーザーメッセージなら仮タイトルを設定
       const userMessagesCount = newMessages.filter(m => m.role === "user").length;
       if (userMessagesCount === 1) {
-        const title = input.length > 20 ? input.substring(0, 20) + "..." : input;
-        updateConversationTitle(convId, title, false).catch(console.error);
+        const tempTitle = input.length > 15 ? input.substring(0, 15) + "..." : input;
+        updateConversationTitle(convId, tempTitle, false).catch(console.error);
         loadConversations();
       }
     }
@@ -832,10 +866,16 @@ ${CONTEXT_PROMPT}${taskInfo}
           content: cleanContent,
           actions: actions.length > 0 ? actions : undefined,
         };
-        setMessages([...newMessages, newMsg]);
+        const allMessages = [...newMessages, newMsg];
+        setMessages(allMessages);
         // AIの返答をFirestoreに保存
         if (convId) {
           addMessageToConversation(convId, "assistant", cleanContent).catch(console.error);
+
+          // 2往復目（4メッセージ）が揃ったらAI要約でタイトル生成
+          if (allMessages.length === 4) {
+            generateSummaryTitle(allMessages, convId);
+          }
         }
       } else {
         const errorMsg = "…すみません、ちょっと調子悪いみたいです。もう一度言ってもらえますか？";

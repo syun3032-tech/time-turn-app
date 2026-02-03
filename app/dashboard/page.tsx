@@ -618,12 +618,11 @@ export default function DashboardPage() {
     }
   };
 
-  // AIでタイトルを生成
-  const generateConversationTitle = async (firstMessage: string, conversationId: string) => {
+  // 仮タイトルを設定（最初のメッセージを短く）
+  const setTempTitle = async (firstMessage: string, conversationId: string) => {
     try {
-      // 簡易的にタイトル生成（最初のメッセージを短く）
-      const title = firstMessage.length > 20
-        ? firstMessage.substring(0, 20) + "..."
+      const title = firstMessage.length > 15
+        ? firstMessage.substring(0, 15) + "..."
         : firstMessage;
 
       await updateConversationTitle(conversationId, title, false);
@@ -634,7 +633,44 @@ export default function DashboardPage() {
         setConversations(convs);
       }
     } catch (error) {
-      console.error("Failed to generate title:", error);
+      console.error("Failed to set temp title:", error);
+    }
+  };
+
+  // AI要約でタイトル生成（2往復分を要約）
+  const generateSummaryTitle = async (msgs: Message[], conversationId: string) => {
+    try {
+      const conversationText = msgs
+        .map(m => `${m.role === "user" ? "ユーザー" : "秘書ちゃん"}: ${m.content}`)
+        .join("\n");
+
+      const summaryResponse = await chatWithAISeamless([
+        {
+          role: "user",
+          content: `以下の会話の内容を10文字以内で要約してタイトルにしてください。
+要約のみを出力し、「」や説明は不要です。
+
+会話:
+${conversationText}`,
+        },
+      ]);
+
+      if (summaryResponse.success && summaryResponse.content) {
+        // 余計な記号を除去して15文字に制限
+        let title = summaryResponse.content
+          .replace(/[「」『』【】]/g, "")
+          .trim();
+        if (title.length > 15) {
+          title = title.substring(0, 15) + "...";
+        }
+        await updateConversationTitle(conversationId, title, false);
+        if (user) {
+          const convs = await getConversations(user.uid);
+          setConversations(convs);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to generate summary title:", error);
     }
   };
 
@@ -882,9 +918,9 @@ export default function DashboardPage() {
     try {
       if (convId) {
         await addMessageToConversation(convId, 'user', message);
-        // 最初のメッセージならタイトルを生成
+        // 最初のメッセージなら仮タイトルを設定
         if (messages.length === 0) {
-          await generateConversationTitle(message, convId);
+          await setTempTitle(message, convId);
         }
       }
     } catch (error) {
@@ -1057,13 +1093,19 @@ export default function DashboardPage() {
         }
 
         const assistantMessage: Message = { role: "assistant", content: finalContent };
-        setMessages([...newMessages, assistantMessage]);
+        const allMessages = [...newMessages, assistantMessage];
+        setMessages(allMessages);
         setCharacterMessage(finalContent);
 
         // Firestoreにアシスタントメッセージを保存
         try {
           if (convId) {
             await addMessageToConversation(convId, 'assistant', finalContent);
+
+            // 2往復目（4メッセージ）が揃ったらAI要約でタイトル生成
+            if (allMessages.length === 4) {
+              generateSummaryTitle(allMessages, convId);
+            }
           }
         } catch (error) {
           console.error("Failed to save assistant message:", error);
@@ -1086,7 +1128,6 @@ export default function DashboardPage() {
 
         // ナレッジ抽出（バックグラウンド処理）
         // 雑談モード（normal）で十分な会話がある場合のみ
-        const allMessages = [...newMessages, assistantMessage];
         if (taskBreakdownStage === "normal" && shouldExtractKnowledge(allMessages.length, lastExtractionCount)) {
           // 非同期で実行（UIをブロックしない）
           extractKnowledgeFromConversation(allMessages).then(async (extracted) => {
