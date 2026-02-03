@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Text, VStack, Input, Button, HStack, Badge, Card, IconButton } from "@chakra-ui/react";
+import { Box, Text, VStack, Input, Button, HStack, Badge, Card, IconButton, Image } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
 import { CharacterAvatar, getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
 import { useState, useEffect, useRef } from "react";
@@ -1747,147 +1747,148 @@ ${conversationText}`,
       {/* ボトムナビ */}
       <NavTabs />
 
-      {/* 会話履歴モーダル - ゲームUI風 */}
+      {/* 会話履歴モーダル - LINE風 */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
-        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(8px)" />
+        <Dialog.Backdrop bg="blackAlpha.500" />
         <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
           <Dialog.Content
-            maxW="600px"
+            maxW="500px"
             maxH="80vh"
             mx={4}
-            bg="rgba(15, 23, 42, 0.85)"
-            backdropFilter="blur(20px)"
-            border="1px solid"
-            borderColor="cyan.500"
-            borderRadius="xl"
-            boxShadow="0 0 30px rgba(99, 179, 237, 0.2), inset 0 0 60px rgba(99, 179, 237, 0.05)"
+            bg="white"
+            borderRadius="2xl"
+            boxShadow="xl"
             overflow="hidden"
           >
-            {/* ヘッダー装飾ライン */}
-            <Box
-              position="absolute"
-              top={0}
-              left={0}
-              right={0}
-              h="2px"
-              bgGradient="linear(to-r, transparent, cyan.400, purple.400, transparent)"
-            />
+            {/* ヘッダー */}
             <Dialog.Header
-              bg="rgba(99, 179, 237, 0.1)"
-              borderBottom="1px solid"
-              borderColor="whiteAlpha.100"
+              bg="teal.500"
+              py={3}
             >
-              <Dialog.Title
-                color="white"
-                fontWeight="bold"
-                fontSize="lg"
-              >
-                会話履歴
-              </Dialog.Title>
-              <Dialog.CloseTrigger color="whiteAlpha.700" _hover={{ color: "white" }} />
+              <HStack gap={3}>
+                <Box
+                  w="40px"
+                  h="40px"
+                  borderRadius="full"
+                  bg="white"
+                  overflow="hidden"
+                >
+                  <Image
+                    src="/hisyochan-icon.png"
+                    alt="秘書ちゃん"
+                    w="100%"
+                    h="100%"
+                    objectFit="cover"
+                    objectPosition="center top"
+                  />
+                </Box>
+                <VStack align="start" gap={0}>
+                  <Dialog.Title color="white" fontWeight="bold" fontSize="md">
+                    会話履歴
+                  </Dialog.Title>
+                  <Text fontSize="xs" color="whiteAlpha.800">
+                    {messages.length > 0 ? `${Math.ceil(messages.length / 2)}往復` : ""}
+                  </Text>
+                </VStack>
+              </HStack>
+              <Dialog.CloseTrigger color="white" _hover={{ bg: "whiteAlpha.200" }} />
             </Dialog.Header>
+
+            {/* メッセージエリア - LINE風 */}
             <Dialog.Body
               overflowY="auto"
-              bg="transparent"
+              bg="gray.100"
+              p={4}
               css={{
                 "&::-webkit-scrollbar": { width: "6px" },
-                "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.05)", borderRadius: "3px" },
-                "&::-webkit-scrollbar-thumb": { background: "rgba(99, 179, 237, 0.5)", borderRadius: "3px" },
+                "&::-webkit-scrollbar-track": { background: "#e2e8f0", borderRadius: "3px" },
+                "&::-webkit-scrollbar-thumb": { background: "#a0aec0", borderRadius: "3px" },
               }}
             >
               <VStack align="stretch" gap={3}>
                 {messages.length === 0 ? (
-                  <Text color="whiteAlpha.500" textAlign="center" py={8}>
+                  <Text color="gray.500" textAlign="center" py={8}>
                     まだ会話がありません
                   </Text>
                 ) : (
                   messages.map((msg, index) => (
-                    <Box key={index}>
-                      {msg.role === "assistant" ? (
+                    <HStack
+                      key={index}
+                      alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
+                      maxW="85%"
+                      gap={2}
+                      flexDirection={msg.role === "user" ? "row-reverse" : "row"}
+                    >
+                      {/* アシスタントのアイコン */}
+                      {msg.role === "assistant" && (
                         <Box
-                          bg="rgba(255, 255, 255, 0.08)"
-                          borderRadius="lg"
-                          p={3}
-                          border="1px solid"
-                          borderColor="whiteAlpha.100"
-                          position="relative"
-                          pl={4}
-                          _before={{
-                            content: '""',
-                            position: "absolute",
-                            left: 0,
-                            top: "12px",
-                            bottom: "12px",
-                            w: "3px",
-                            bgGradient: "linear(to-b, cyan.400, purple.400)",
-                            borderRadius: "full",
-                          }}
+                          w="32px"
+                          h="32px"
+                          borderRadius="full"
+                          bg="white"
+                          overflow="hidden"
+                          flexShrink={0}
+                          alignSelf="flex-start"
+                          boxShadow="sm"
                         >
-                          <HStack mb={2}>
-                            <Badge
-                              bg="purple.500"
-                              color="white"
-                              borderRadius="md"
-                              px={2}
-                              fontSize="xs"
-                            >
-                              秘書ちゃん
-                            </Badge>
-                            <Text fontSize="xs" color="whiteAlpha.400">
-                              {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
-                            </Text>
-                          </HStack>
-                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" lineHeight="1.7">
-                            {msg.content}
-                          </Text>
-                        </Box>
-                      ) : (
-                        <Box
-                          bg="rgba(99, 179, 237, 0.15)"
-                          borderRadius="lg"
-                          p={3}
-                          ml="auto"
-                          maxW="85%"
-                          border="1px solid"
-                          borderColor="cyan.500"
-                        >
-                          <HStack mb={2} justify="flex-end">
-                            <Text fontSize="xs" color="whiteAlpha.400">
-                              {Math.floor((index + 1) / 2) + 1}回目の質問
-                            </Text>
-                            <Badge
-                              bg="cyan.500"
-                              color="white"
-                              borderRadius="md"
-                              px={2}
-                              fontSize="xs"
-                            >
-                              あなた
-                            </Badge>
-                          </HStack>
-                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" lineHeight="1.7">
-                            {msg.content}
-                          </Text>
+                          <Image
+                            src="/hisyochan-icon.png"
+                            alt="秘書ちゃん"
+                            w="100%"
+                            h="100%"
+                            objectFit="cover"
+                            objectPosition="center top"
+                          />
                         </Box>
                       )}
-                    </Box>
+
+                      {/* 吹き出し */}
+                      <Box position="relative">
+                        {/* 吹き出しの尻尾 */}
+                        <Box
+                          position="absolute"
+                          bottom="8px"
+                          {...(msg.role === "user" ? { right: "-6px" } : { left: "-6px" })}
+                          w="0"
+                          h="0"
+                          borderStyle="solid"
+                          borderWidth={msg.role === "user" ? "6px 0 6px 8px" : "6px 8px 6px 0"}
+                          borderColor={msg.role === "user"
+                            ? "transparent transparent transparent #319795"
+                            : "transparent #ffffff transparent transparent"
+                          }
+                        />
+                        <Box
+                          bg={msg.role === "user" ? "teal.500" : "white"}
+                          px={3}
+                          py={2}
+                          borderRadius="18px"
+                          borderBottomRightRadius={msg.role === "user" ? "4px" : "18px"}
+                          borderBottomLeftRadius={msg.role === "user" ? "18px" : "4px"}
+                          boxShadow="sm"
+                        >
+                          <Text
+                            fontSize="sm"
+                            color={msg.role === "user" ? "white" : "gray.800"}
+                            whiteSpace="pre-wrap"
+                            lineHeight="1.6"
+                          >
+                            {msg.content}
+                          </Text>
+                        </Box>
+                      </Box>
+                    </HStack>
                   ))
                 )}
               </VStack>
             </Dialog.Body>
-            <Dialog.Footer
-              bg="rgba(99, 179, 237, 0.05)"
-              borderTop="1px solid"
-              borderColor="whiteAlpha.100"
-            >
+
+            {/* フッター */}
+            <Dialog.Footer bg="white" borderTop="1px solid" borderColor="gray.200" py={3}>
               <Button
-                bg="rgba(99, 179, 237, 0.2)"
-                color="white"
-                border="1px solid"
-                borderColor="cyan.500"
-                _hover={{
-                  bg: "rgba(99, 179, 237, 0.3)",
-                }}
+                colorScheme="teal"
+                borderRadius="full"
+                px={6}
                 onClick={() => setIsHistoryModalOpen(false)}
               >
                 閉じる
