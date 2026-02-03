@@ -175,18 +175,21 @@ export function ConversationSidebar({
           <Button
             w="100%"
             size="md"
-            bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-            color="white"
+            bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
+            color="cyan.100"
+            border="1px solid"
+            borderColor="cyan.400"
             _hover={{
-              bg: "linear-gradient(135deg, #764ba2 0%, #667eea 100%)",
+              bg: "linear-gradient(135deg, rgba(99, 179, 237, 0.5), rgba(129, 230, 217, 0.5))",
               transform: "translateY(-2px)",
-              boxShadow: "0 5px 20px rgba(102, 126, 234, 0.5)",
+              boxShadow: "0 5px 20px rgba(99, 179, 237, 0.4)",
+              borderColor: "cyan.300",
             }}
             _active={{ transform: "translateY(0)" }}
             transition="all 0.2s"
             borderRadius="xl"
             fontWeight="bold"
-            boxShadow="0 4px 15px rgba(102, 126, 234, 0.3)"
+            boxShadow="0 0 15px rgba(99, 179, 237, 0.2)"
             onClick={() => {
               onNewConversation();
               onClose();
