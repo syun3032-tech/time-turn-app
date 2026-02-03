@@ -1044,13 +1044,12 @@ ${CONTEXT_PROMPT}${taskInfo}
               w="32px"
               h="32px"
               borderRadius="full"
+              bg="white"
               overflow="hidden"
               flexShrink={0}
               alignSelf="flex-end"
               mb={1}
-              border="2px solid"
-              borderColor="cyan.400"
-              boxShadow="0 0 10px rgba(99, 179, 237, 0.5)"
+              boxShadow="sm"
             >
               <Image
                 src="/hisyochan-icon.png"
@@ -1063,38 +1062,46 @@ ${CONTEXT_PROMPT}${taskInfo}
             </Box>
           )}
 
-          {/* 吹き出し - ゲームUI風 */}
-          <Box
-            bg={isUser
-              ? "linear-gradient(135deg, rgba(99, 179, 237, 0.9), rgba(129, 230, 217, 0.9))"
-              : "linear-gradient(135deg, rgba(26, 26, 46, 0.95), rgba(22, 33, 62, 0.95))"
-            }
-            px={3}
-            py={2}
-            borderRadius="16px"
-            border="1px solid"
-            borderColor={isUser ? "cyan.300" : "whiteAlpha.200"}
-            boxShadow={isUser
-              ? "0 0 15px rgba(99, 179, 237, 0.4)"
-              : "0 0 15px rgba(0, 0, 0, 0.3)"
-            }
-          >
-            <Text
-              fontSize="sm"
-              color={isUser ? "white" : "whiteAlpha.900"}
-              whiteSpace="pre-wrap"
-              textShadow={isUser ? "0 0 10px rgba(255,255,255,0.3)" : "none"}
+          {/* 吹き出し */}
+          <Box position="relative">
+            {/* 吹き出しの尻尾 */}
+            <Box
+              position="absolute"
+              bottom="8px"
+              {...(isUser ? { right: "-6px" } : { left: "-6px" })}
+              w="0"
+              h="0"
+              borderStyle="solid"
+              borderWidth={isUser ? "6px 0 6px 8px" : "6px 8px 6px 0"}
+              borderColor={isUser
+                ? "transparent transparent transparent #319795"
+                : "transparent rgba(255,255,255,0.85) transparent transparent"
+              }
+            />
+            <Box
+              bg={isUser ? "teal.500" : "rgba(255,255,255,0.85)"}
+              px={3}
+              py={2}
+              borderRadius="18px"
+              borderBottomRightRadius={isUser ? "4px" : "18px"}
+              borderBottomLeftRadius={isUser ? "18px" : "4px"}
+              boxShadow="sm"
             >
-              {isLatestAssistant ? typedLatestMessage : msg.content}
-              {isLatestAssistant && isTyping && (
-                <Box as="span" animation="blink 1s infinite" ml={0.5} color="cyan.300">▌</Box>
-              )}
-            </Text>
-              {/* 複数アクション確認UI - ゲームUI風 */}
+              <Text
+                fontSize="sm"
+                color={isUser ? "white" : "gray.800"}
+                whiteSpace="pre-wrap"
+              >
+                {isLatestAssistant ? typedLatestMessage : msg.content}
+                {isLatestAssistant && isTyping && (
+                  <Box as="span" animation="blink 1s infinite" ml={0.5}>▌</Box>
+                )}
+              </Text>
+              {/* 複数アクション確認UI */}
               {msg.actions && msg.actions.length > 0 && msg.actionsConfirmed === undefined && (
                 <VStack align="stretch" mt={2} gap={1}>
-                  <Box bg="whiteAlpha.100" p={2} borderRadius="md" border="1px solid" borderColor="cyan.400">
-                    <Text fontSize="xs" color="cyan.200" fontWeight="bold" mb={1}>
+                  <Box bg="teal.50" p={2} borderRadius="md">
+                    <Text fontSize="xs" color="teal.700" fontWeight="bold" mb={1}>
                       以下を追加しますか？
                     </Text>
                     <VStack align="stretch" gap={1}>
@@ -1104,7 +1111,7 @@ ${CONTEXT_PROMPT}${taskInfo}
                           gap={2}
                           cursor="pointer"
                           onClick={() => handleToggleAction(idx, actionIdx)}
-                          _hover={{ bg: "whiteAlpha.200" }}
+                          _hover={{ bg: "teal.100" }}
                           p={1}
                           borderRadius="sm"
                         >
@@ -1113,8 +1120,8 @@ ${CONTEXT_PROMPT}${taskInfo}
                             h="16px"
                             borderRadius="sm"
                             border="2px solid"
-                            borderColor={action.selected ? "cyan.400" : "whiteAlpha.400"}
-                            bg={action.selected ? "cyan.400" : "transparent"}
+                            borderColor={action.selected ? "teal.500" : "gray.300"}
+                            bg={action.selected ? "teal.500" : "transparent"}
                             display="flex"
                             alignItems="center"
                             justifyContent="center"
@@ -1124,7 +1131,7 @@ ${CONTEXT_PROMPT}${taskInfo}
                               <Text fontSize="10px" color="white" fontWeight="bold">✓</Text>
                             )}
                           </Box>
-                          <Text fontSize="xs" color="whiteAlpha.800">
+                          <Text fontSize="xs" color="gray.700">
                             {action.type === "add_goal" ? "Goal" :
                              action.type === "add_project" ? "Project" :
                              action.type === "add_milestone" ? "Milestone" :
@@ -1139,11 +1146,7 @@ ${CONTEXT_PROMPT}${taskInfo}
                   <HStack gap={2}>
                     <Button
                       size="xs"
-                      bg="linear-gradient(135deg, rgba(99, 179, 237, 0.8), rgba(129, 230, 217, 0.8))"
-                      color="white"
-                      border="1px solid"
-                      borderColor="cyan.400"
-                      _hover={{ bg: "linear-gradient(135deg, rgba(99, 179, 237, 1), rgba(129, 230, 217, 1))" }}
+                      colorScheme="teal"
                       flex={1}
                       onClick={() => handleConfirmActions(idx, true)}
                       disabled={!msg.actions.some(a => a.selected)}
@@ -1153,8 +1156,6 @@ ${CONTEXT_PROMPT}${taskInfo}
                     <Button
                       size="xs"
                       variant="ghost"
-                      color="whiteAlpha.700"
-                      _hover={{ bg: "whiteAlpha.200" }}
                       flex={1}
                       onClick={() => handleConfirmActions(idx, false)}
                     >
@@ -1167,21 +1168,22 @@ ${CONTEXT_PROMPT}${taskInfo}
               {msg.actions && msg.actionsConfirmed === true && (
                 <VStack align="stretch" mt={1} gap={0}>
                   {msg.actions.filter(a => a.selected && a.success).length > 0 && (
-                    <Text fontSize="xs" color="green.300">
+                    <Text fontSize="xs" color="green.500">
                       {msg.actions.filter(a => a.selected && a.success).length}件追加しました
                     </Text>
                   )}
                   {msg.actions.filter(a => a.selected && a.success === false).length > 0 && (
-                    <Text fontSize="xs" color="red.300">
+                    <Text fontSize="xs" color="red.500">
                       {msg.actions.filter(a => a.selected && a.success === false).length}件追加できませんでした
                     </Text>
                   )}
                 </VStack>
               )}
               {msg.actions && msg.actionsConfirmed === false && (
-                <Text fontSize="xs" color="whiteAlpha.500" mt={1}>キャンセルしました</Text>
+                <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
               )}
             </Box>
+          </Box>
         </HStack>
       );})}
       {isLoading && (
@@ -1190,13 +1192,12 @@ ${CONTEXT_PROMPT}${taskInfo}
             w="32px"
             h="32px"
             borderRadius="full"
+            bg="white"
             overflow="hidden"
             flexShrink={0}
             alignSelf="flex-end"
             mb={1}
-            border="2px solid"
-            borderColor="cyan.400"
-            boxShadow="0 0 10px rgba(99, 179, 237, 0.5)"
+            boxShadow="sm"
           >
             <Image
               src="/hisyochan-icon.png"
@@ -1207,18 +1208,29 @@ ${CONTEXT_PROMPT}${taskInfo}
               objectPosition="center top"
             />
           </Box>
-          <Box
-            bg="linear-gradient(135deg, rgba(26, 26, 46, 0.95), rgba(22, 33, 62, 0.95))"
-            px={3}
-            py={2}
-            borderRadius="16px"
-            border="1px solid"
-            borderColor="whiteAlpha.200"
-            boxShadow="0 0 15px rgba(0, 0, 0, 0.3)"
-          >
-            <Text fontSize="sm" color="cyan.300">
-              <Box as="span" animation="pulse 1.5s infinite">・・・</Box>
-            </Text>
+          <Box position="relative">
+            <Box
+              position="absolute"
+              bottom="8px"
+              left="-6px"
+              w="0"
+              h="0"
+              borderStyle="solid"
+              borderWidth="6px 8px 6px 0"
+              borderColor="transparent rgba(255,255,255,0.85) transparent transparent"
+            />
+            <Box
+              bg="rgba(255,255,255,0.85)"
+              px={3}
+              py={2}
+              borderRadius="18px"
+              borderBottomLeftRadius="4px"
+              boxShadow="sm"
+            >
+              <Text fontSize="sm" color="gray.500">
+                <Box as="span" animation="pulse 1.5s infinite">・・・</Box>
+              </Text>
+            </Box>
           </Box>
         </HStack>
       )}

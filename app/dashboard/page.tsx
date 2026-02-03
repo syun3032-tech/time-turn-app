@@ -1747,60 +1747,148 @@ ${conversationText}`,
       {/* ボトムナビ */}
       <NavTabs />
 
-      {/* 会話履歴モーダル */}
+      {/* 会話履歴モーダル - ゲームUI風 */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
-        <Dialog.Backdrop />
+        <Dialog.Backdrop bg="blackAlpha.700" backdropFilter="blur(4px)" />
         <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
-          <Dialog.Content maxW="600px" maxH="80vh" mx={4}>
-            <Dialog.Header>
-              <Dialog.Title color="gray.800">会話履歴</Dialog.Title>
-              <Dialog.CloseTrigger />
+          <Dialog.Content
+            maxW="600px"
+            maxH="80vh"
+            mx={4}
+            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
+            border="2px solid"
+            borderColor="cyan.400"
+            borderRadius="xl"
+            boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
+            overflow="hidden"
+          >
+            {/* ヘッダー装飾ライン */}
+            <Box
+              position="absolute"
+              top={0}
+              left={0}
+              right={0}
+              h="2px"
+              bgGradient="linear(to-r, transparent, cyan.400, purple.400, transparent)"
+            />
+            <Dialog.Header
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.2), rgba(159, 122, 234, 0.2))"
+              borderBottom="1px solid"
+              borderColor="whiteAlpha.200"
+            >
+              <Dialog.Title
+                color="white"
+                textShadow="0 0 10px rgba(99, 179, 237, 0.5)"
+                fontWeight="bold"
+              >
+                会話履歴
+              </Dialog.Title>
+              <Dialog.CloseTrigger color="whiteAlpha.800" _hover={{ color: "white" }} />
             </Dialog.Header>
-            <Dialog.Body overflowY="auto">
+            <Dialog.Body
+              overflowY="auto"
+              css={{
+                "&::-webkit-scrollbar": { width: "6px" },
+                "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.1)", borderRadius: "3px" },
+                "&::-webkit-scrollbar-thumb": { background: "linear-gradient(to-b, #667eea, #764ba2)", borderRadius: "3px" },
+              }}
+            >
               <VStack align="stretch" gap={3}>
                 {messages.length === 0 ? (
-                  <Text color="gray.600" textAlign="center" py={8}>
+                  <Text color="whiteAlpha.600" textAlign="center" py={8}>
                     まだ会話がありません
                   </Text>
                 ) : (
                   messages.map((msg, index) => (
                     <Box key={index}>
                       {msg.role === "assistant" ? (
-                        <Card.Root bg="gray.50">
-                          <Card.Body>
-                            <HStack mb={1}>
-                              <Badge colorScheme="purple" size="sm">秘書ちゃん</Badge>
-                              <Text fontSize="xs" color="gray.600">
-                                {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
-                              </Text>
-                            </HStack>
-                            <Text fontSize="sm" whiteSpace="pre-wrap">
-                              {msg.content}
+                        <Box
+                          bg="whiteAlpha.100"
+                          borderRadius="xl"
+                          p={3}
+                          border="1px solid"
+                          borderColor="whiteAlpha.200"
+                          position="relative"
+                          _before={{
+                            content: '""',
+                            position: "absolute",
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            w: "3px",
+                            bgGradient: "linear(to-b, cyan.400, purple.400)",
+                            borderRadius: "full",
+                          }}
+                        >
+                          <HStack mb={2}>
+                            <Badge
+                              bg="linear-gradient(135deg, #f093fb, #f5576c)"
+                              color="white"
+                              borderRadius="full"
+                              px={2}
+                              fontSize="xs"
+                            >
+                              秘書ちゃん
+                            </Badge>
+                            <Text fontSize="xs" color="whiteAlpha.500">
+                              {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
                             </Text>
-                          </Card.Body>
-                        </Card.Root>
+                          </HStack>
+                          <Text fontSize="sm" whiteSpace="pre-wrap" color="whiteAlpha.900">
+                            {msg.content}
+                          </Text>
+                        </Box>
                       ) : (
-                        <Card.Root bg="blue.50" ml="auto" maxW="85%">
-                          <Card.Body>
-                            <HStack mb={1} justify="flex-end">
-                              <Text fontSize="xs" color="gray.600">
-                                {Math.floor((index + 1) / 2) + 1}回目の質問
-                              </Text>
-                              <Badge colorScheme="blue" size="sm">あなた</Badge>
-                            </HStack>
-                            <Text fontSize="sm" whiteSpace="pre-wrap">
-                              {msg.content}
+                        <Box
+                          bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
+                          borderRadius="xl"
+                          p={3}
+                          ml="auto"
+                          maxW="85%"
+                          border="1px solid"
+                          borderColor="cyan.400"
+                          boxShadow="0 0 15px rgba(99, 179, 237, 0.2)"
+                        >
+                          <HStack mb={2} justify="flex-end">
+                            <Text fontSize="xs" color="whiteAlpha.500">
+                              {Math.floor((index + 1) / 2) + 1}回目の質問
                             </Text>
-                          </Card.Body>
-                        </Card.Root>
+                            <Badge
+                              bg="linear-gradient(135deg, rgba(99, 179, 237, 0.8), rgba(129, 230, 217, 0.8))"
+                              color="white"
+                              borderRadius="full"
+                              px={2}
+                              fontSize="xs"
+                            >
+                              あなた
+                            </Badge>
+                          </HStack>
+                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" textShadow="0 0 10px rgba(255,255,255,0.2)">
+                            {msg.content}
+                          </Text>
+                        </Box>
                       )}
                     </Box>
                   ))
                 )}
               </VStack>
             </Dialog.Body>
-            <Dialog.Footer>
-              <Button onClick={() => setIsHistoryModalOpen(false)}>
+            <Dialog.Footer
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
+              borderTop="1px solid"
+              borderColor="whiteAlpha.200"
+            >
+              <Button
+                bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
+                color="cyan.100"
+                border="1px solid"
+                borderColor="cyan.400"
+                _hover={{
+                  bg: "linear-gradient(135deg, rgba(99, 179, 237, 0.5), rgba(129, 230, 217, 0.5))",
+                  boxShadow: "0 0 15px rgba(99, 179, 237, 0.4)",
+                }}
+                onClick={() => setIsHistoryModalOpen(false)}
+              >
                 閉じる
               </Button>
             </Dialog.Footer>
