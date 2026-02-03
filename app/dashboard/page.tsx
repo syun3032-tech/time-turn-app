@@ -1749,17 +1749,18 @@ ${conversationText}`,
 
       {/* 会話履歴モーダル - ゲームUI風 */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
-        <Dialog.Backdrop bg="blackAlpha.700" backdropFilter="blur(4px)" />
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(8px)" />
         <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
           <Dialog.Content
             maxW="600px"
             maxH="80vh"
             mx={4}
-            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
-            border="2px solid"
-            borderColor="cyan.400"
+            bg="rgba(15, 23, 42, 0.85)"
+            backdropFilter="blur(20px)"
+            border="1px solid"
+            borderColor="cyan.500"
             borderRadius="xl"
-            boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
+            boxShadow="0 0 30px rgba(99, 179, 237, 0.2), inset 0 0 60px rgba(99, 179, 237, 0.05)"
             overflow="hidden"
           >
             {/* ヘッダー装飾ライン */}
@@ -1772,30 +1773,31 @@ ${conversationText}`,
               bgGradient="linear(to-r, transparent, cyan.400, purple.400, transparent)"
             />
             <Dialog.Header
-              bgGradient="linear(to-r, rgba(99, 179, 237, 0.2), rgba(159, 122, 234, 0.2))"
+              bg="rgba(99, 179, 237, 0.1)"
               borderBottom="1px solid"
-              borderColor="whiteAlpha.200"
+              borderColor="whiteAlpha.100"
             >
               <Dialog.Title
                 color="white"
-                textShadow="0 0 10px rgba(99, 179, 237, 0.5)"
                 fontWeight="bold"
+                fontSize="lg"
               >
                 会話履歴
               </Dialog.Title>
-              <Dialog.CloseTrigger color="whiteAlpha.800" _hover={{ color: "white" }} />
+              <Dialog.CloseTrigger color="whiteAlpha.700" _hover={{ color: "white" }} />
             </Dialog.Header>
             <Dialog.Body
               overflowY="auto"
+              bg="transparent"
               css={{
                 "&::-webkit-scrollbar": { width: "6px" },
-                "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.1)", borderRadius: "3px" },
-                "&::-webkit-scrollbar-thumb": { background: "linear-gradient(to-b, #667eea, #764ba2)", borderRadius: "3px" },
+                "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.05)", borderRadius: "3px" },
+                "&::-webkit-scrollbar-thumb": { background: "rgba(99, 179, 237, 0.5)", borderRadius: "3px" },
               }}
             >
               <VStack align="stretch" gap={3}>
                 {messages.length === 0 ? (
-                  <Text color="whiteAlpha.600" textAlign="center" py={8}>
+                  <Text color="whiteAlpha.500" textAlign="center" py={8}>
                     まだ会話がありません
                   </Text>
                 ) : (
@@ -1803,18 +1805,19 @@ ${conversationText}`,
                     <Box key={index}>
                       {msg.role === "assistant" ? (
                         <Box
-                          bg="whiteAlpha.100"
-                          borderRadius="xl"
+                          bg="rgba(255, 255, 255, 0.08)"
+                          borderRadius="lg"
                           p={3}
                           border="1px solid"
-                          borderColor="whiteAlpha.200"
+                          borderColor="whiteAlpha.100"
                           position="relative"
+                          pl={4}
                           _before={{
                             content: '""',
                             position: "absolute",
                             left: 0,
-                            top: 0,
-                            bottom: 0,
+                            top: "12px",
+                            bottom: "12px",
                             w: "3px",
                             bgGradient: "linear(to-b, cyan.400, purple.400)",
                             borderRadius: "full",
@@ -1822,48 +1825,47 @@ ${conversationText}`,
                         >
                           <HStack mb={2}>
                             <Badge
-                              bg="linear-gradient(135deg, #f093fb, #f5576c)"
+                              bg="purple.500"
                               color="white"
-                              borderRadius="full"
+                              borderRadius="md"
                               px={2}
                               fontSize="xs"
                             >
                               秘書ちゃん
                             </Badge>
-                            <Text fontSize="xs" color="whiteAlpha.500">
+                            <Text fontSize="xs" color="whiteAlpha.400">
                               {index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目の返信`}
                             </Text>
                           </HStack>
-                          <Text fontSize="sm" whiteSpace="pre-wrap" color="whiteAlpha.900">
+                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" lineHeight="1.7">
                             {msg.content}
                           </Text>
                         </Box>
                       ) : (
                         <Box
-                          bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
-                          borderRadius="xl"
+                          bg="rgba(99, 179, 237, 0.15)"
+                          borderRadius="lg"
                           p={3}
                           ml="auto"
                           maxW="85%"
                           border="1px solid"
-                          borderColor="cyan.400"
-                          boxShadow="0 0 15px rgba(99, 179, 237, 0.2)"
+                          borderColor="cyan.500"
                         >
                           <HStack mb={2} justify="flex-end">
-                            <Text fontSize="xs" color="whiteAlpha.500">
+                            <Text fontSize="xs" color="whiteAlpha.400">
                               {Math.floor((index + 1) / 2) + 1}回目の質問
                             </Text>
                             <Badge
-                              bg="linear-gradient(135deg, rgba(99, 179, 237, 0.8), rgba(129, 230, 217, 0.8))"
+                              bg="cyan.500"
                               color="white"
-                              borderRadius="full"
+                              borderRadius="md"
                               px={2}
                               fontSize="xs"
                             >
                               あなた
                             </Badge>
                           </HStack>
-                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" textShadow="0 0 10px rgba(255,255,255,0.2)">
+                          <Text fontSize="sm" whiteSpace="pre-wrap" color="white" lineHeight="1.7">
                             {msg.content}
                           </Text>
                         </Box>
@@ -1874,18 +1876,17 @@ ${conversationText}`,
               </VStack>
             </Dialog.Body>
             <Dialog.Footer
-              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
+              bg="rgba(99, 179, 237, 0.05)"
               borderTop="1px solid"
-              borderColor="whiteAlpha.200"
+              borderColor="whiteAlpha.100"
             >
               <Button
-                bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
-                color="cyan.100"
+                bg="rgba(99, 179, 237, 0.2)"
+                color="white"
                 border="1px solid"
-                borderColor="cyan.400"
+                borderColor="cyan.500"
                 _hover={{
-                  bg: "linear-gradient(135deg, rgba(99, 179, 237, 0.5), rgba(129, 230, 217, 0.5))",
-                  boxShadow: "0 0 15px rgba(99, 179, 237, 0.4)",
+                  bg: "rgba(99, 179, 237, 0.3)",
                 }}
                 onClick={() => setIsHistoryModalOpen(false)}
               >
