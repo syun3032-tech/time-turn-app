@@ -1755,7 +1755,8 @@ ${conversationText}`,
             maxW="500px"
             maxH="80vh"
             mx={4}
-            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
+            bg="rgba(26, 26, 46, 0.85)"
+            backdropFilter="blur(10px)"
             borderRadius="xl"
             border="2px solid"
             borderColor="cyan.400"
