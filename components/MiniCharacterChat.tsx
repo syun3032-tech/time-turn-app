@@ -1017,7 +1017,7 @@ ${CONTEXT_PROMPT}${taskInfo}
     </Box>
   );
 
-  // メッセージ表示コンポーネント
+  // メッセージ表示コンポーネント（LINE風吹き出し）
   const MessageList = () => (
     <VStack gap={3} align="stretch">
       {/* 履歴選択モードの場合、最初に吹き出しを表示 */}
@@ -1028,22 +1028,69 @@ ${CONTEXT_PROMPT}${taskInfo}
         // 最新のアシスタントメッセージかどうかを判定
         const isLatestAssistant = msg.role === "assistant" &&
           idx === messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i >= 0).pop();
+        const isUser = msg.role === "user";
 
         return (
-        <Box
+        <HStack
           key={idx}
-          alignSelf={msg.role === "user" ? "flex-end" : "flex-start"}
+          alignSelf={isUser ? "flex-end" : "flex-start"}
           maxW="85%"
+          gap={2}
+          flexDirection={isUser ? "row-reverse" : "row"}
         >
-          <Card.Root
-            bg={msg.role === "user" ? "teal.500" : "white"}
-            shadow="sm"
-            borderRadius="xl"
-          >
-            <Card.Body py={2} px={3}>
+          {/* アシスタントのアイコン */}
+          {!isUser && (
+            <Box
+              w="32px"
+              h="32px"
+              borderRadius="full"
+              bg="white"
+              overflow="hidden"
+              flexShrink={0}
+              alignSelf="flex-end"
+              mb={1}
+              boxShadow="sm"
+            >
+              <Image
+                src="/hisyochan-icon.png"
+                alt="秘書ちゃん"
+                w="100%"
+                h="100%"
+                objectFit="cover"
+                objectPosition="center top"
+              />
+            </Box>
+          )}
+
+          {/* 吹き出し */}
+          <Box position="relative">
+            {/* 吹き出しの尻尾 */}
+            <Box
+              position="absolute"
+              bottom="8px"
+              {...(isUser ? { right: "-6px" } : { left: "-6px" })}
+              w="0"
+              h="0"
+              borderStyle="solid"
+              borderWidth={isUser ? "6px 0 6px 8px" : "6px 8px 6px 0"}
+              borderColor={isUser
+                ? "transparent transparent transparent #319795"
+                : "transparent #ffffff transparent transparent"
+              }
+            />
+            <Box
+              bg={isUser ? "teal.500" : "white"}
+              px={3}
+              py={2}
+              borderRadius="18px"
+              borderBottomRightRadius={isUser ? "4px" : "18px"}
+              borderBottomLeftRadius={isUser ? "18px" : "4px"}
+              boxShadow="sm"
+            >
               <Text
                 fontSize="sm"
-                color={msg.role === "user" ? "white" : "gray.800"}
+                color={isUser ? "white" : "gray.800"}
+                whiteSpace="pre-wrap"
               >
                 {isLatestAssistant ? typedLatestMessage : msg.content}
                 {isLatestAssistant && isTyping && (
@@ -1135,18 +1182,57 @@ ${CONTEXT_PROMPT}${taskInfo}
               {msg.actions && msg.actionsConfirmed === false && (
                 <Text fontSize="xs" color="gray.400" mt={1}>キャンセルしました</Text>
               )}
-            </Card.Body>
-          </Card.Root>
-        </Box>
+            </Box>
+          </Box>
+        </HStack>
       );})}
       {isLoading && (
-        <Box alignSelf="flex-start" maxW="85%">
-          <Card.Root bg="white" shadow="sm" borderRadius="xl">
-            <Card.Body py={2} px={3}>
-              <Text fontSize="sm" color="gray.500">...</Text>
-            </Card.Body>
-          </Card.Root>
-        </Box>
+        <HStack alignSelf="flex-start" maxW="85%" gap={2}>
+          <Box
+            w="32px"
+            h="32px"
+            borderRadius="full"
+            bg="white"
+            overflow="hidden"
+            flexShrink={0}
+            alignSelf="flex-end"
+            mb={1}
+            boxShadow="sm"
+          >
+            <Image
+              src="/hisyochan-icon.png"
+              alt="秘書ちゃん"
+              w="100%"
+              h="100%"
+              objectFit="cover"
+              objectPosition="center top"
+            />
+          </Box>
+          <Box position="relative">
+            <Box
+              position="absolute"
+              bottom="8px"
+              left="-6px"
+              w="0"
+              h="0"
+              borderStyle="solid"
+              borderWidth="6px 8px 6px 0"
+              borderColor="transparent #ffffff transparent transparent"
+            />
+            <Box
+              bg="white"
+              px={3}
+              py={2}
+              borderRadius="18px"
+              borderBottomLeftRadius="4px"
+              boxShadow="sm"
+            >
+              <Text fontSize="sm" color="gray.500">
+                <Box as="span" animation="pulse 1.5s infinite">・・・</Box>
+              </Text>
+            </Box>
+          </Box>
+        </HStack>
       )}
       <div ref={messagesEndRef} />
     </VStack>
