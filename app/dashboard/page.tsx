@@ -1747,31 +1747,47 @@ ${conversationText}`,
       {/* ボトムナビ */}
       <NavTabs />
 
-      {/* 会話履歴モーダル - LINE風 */}
+      {/* 会話履歴モーダル - ゲームUI風 + LINE風レイアウト */}
       <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
-        <Dialog.Backdrop bg="blackAlpha.500" />
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
         <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
           <Dialog.Content
             maxW="500px"
             maxH="80vh"
             mx={4}
-            bg="white"
-            borderRadius="2xl"
-            boxShadow="xl"
+            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
+            borderRadius="xl"
+            border="2px solid"
+            borderColor="cyan.400"
+            boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
             overflow="hidden"
           >
+            {/* ヘッダー装飾ライン */}
+            <Box
+              position="absolute"
+              top={0}
+              left={0}
+              right={0}
+              h="2px"
+              bgGradient="linear(to-r, transparent, cyan.400, purple.400, transparent)"
+            />
+
             {/* ヘッダー */}
             <Dialog.Header
-              bg="teal.500"
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.2), rgba(159, 122, 234, 0.2))"
+              borderBottom="1px solid"
+              borderColor="whiteAlpha.200"
               py={3}
             >
               <HStack gap={3}>
                 <Box
-                  w="40px"
-                  h="40px"
+                  w="45px"
+                  h="45px"
                   borderRadius="full"
-                  bg="white"
                   overflow="hidden"
+                  border="2px solid"
+                  borderColor="cyan.400"
+                  boxShadow="0 0 15px rgba(99, 179, 237, 0.5)"
                 >
                   <Image
                     src="/hisyochan-icon.png"
@@ -1783,31 +1799,36 @@ ${conversationText}`,
                   />
                 </Box>
                 <VStack align="start" gap={0}>
-                  <Dialog.Title color="white" fontWeight="bold" fontSize="md">
+                  <Dialog.Title
+                    color="white"
+                    fontWeight="bold"
+                    fontSize="lg"
+                    textShadow="0 0 10px rgba(99, 179, 237, 0.5)"
+                  >
                     会話履歴
                   </Dialog.Title>
-                  <Text fontSize="xs" color="whiteAlpha.800">
-                    {messages.length > 0 ? `${Math.ceil(messages.length / 2)}往復` : ""}
+                  <Text fontSize="xs" color="cyan.200">
+                    {messages.length > 0 ? `${Math.ceil(messages.length / 2)}往復` : "Chat History"}
                   </Text>
                 </VStack>
               </HStack>
-              <Dialog.CloseTrigger color="white" _hover={{ bg: "whiteAlpha.200" }} />
+              <Dialog.CloseTrigger color="whiteAlpha.800" _hover={{ bg: "whiteAlpha.200", color: "white" }} />
             </Dialog.Header>
 
-            {/* メッセージエリア - LINE風 */}
+            {/* メッセージエリア - LINE風レイアウト */}
             <Dialog.Body
               overflowY="auto"
-              bg="gray.100"
+              bg="transparent"
               p={4}
               css={{
                 "&::-webkit-scrollbar": { width: "6px" },
-                "&::-webkit-scrollbar-track": { background: "#e2e8f0", borderRadius: "3px" },
-                "&::-webkit-scrollbar-thumb": { background: "#a0aec0", borderRadius: "3px" },
+                "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.1)", borderRadius: "3px" },
+                "&::-webkit-scrollbar-thumb": { background: "linear-gradient(to-b, #667eea, #764ba2)", borderRadius: "3px" },
               }}
             >
               <VStack align="stretch" gap={3}>
                 {messages.length === 0 ? (
-                  <Text color="gray.500" textAlign="center" py={8}>
+                  <Text color="whiteAlpha.500" textAlign="center" py={8}>
                     まだ会話がありません
                   </Text>
                 ) : (
@@ -1825,11 +1846,12 @@ ${conversationText}`,
                           w="32px"
                           h="32px"
                           borderRadius="full"
-                          bg="white"
                           overflow="hidden"
                           flexShrink={0}
                           alignSelf="flex-start"
-                          boxShadow="sm"
+                          border="2px solid"
+                          borderColor="cyan.400"
+                          boxShadow="0 0 10px rgba(99, 179, 237, 0.5)"
                         >
                           <Image
                             src="/hisyochan-icon.png"
@@ -1854,22 +1876,27 @@ ${conversationText}`,
                           borderStyle="solid"
                           borderWidth={msg.role === "user" ? "6px 0 6px 8px" : "6px 8px 6px 0"}
                           borderColor={msg.role === "user"
-                            ? "transparent transparent transparent #319795"
-                            : "transparent #ffffff transparent transparent"
+                            ? "transparent transparent transparent rgba(99, 179, 237, 0.8)"
+                            : "transparent rgba(255, 255, 255, 0.15) transparent transparent"
                           }
                         />
                         <Box
-                          bg={msg.role === "user" ? "teal.500" : "white"}
+                          bg={msg.role === "user"
+                            ? "linear-gradient(135deg, rgba(99, 179, 237, 0.8), rgba(129, 230, 217, 0.8))"
+                            : "rgba(255, 255, 255, 0.1)"
+                          }
                           px={3}
                           py={2}
-                          borderRadius="18px"
-                          borderBottomRightRadius={msg.role === "user" ? "4px" : "18px"}
-                          borderBottomLeftRadius={msg.role === "user" ? "18px" : "4px"}
-                          boxShadow="sm"
+                          borderRadius="16px"
+                          borderBottomRightRadius={msg.role === "user" ? "4px" : "16px"}
+                          borderBottomLeftRadius={msg.role === "user" ? "16px" : "4px"}
+                          border="1px solid"
+                          borderColor={msg.role === "user" ? "cyan.400" : "whiteAlpha.200"}
+                          boxShadow={msg.role === "user" ? "0 0 15px rgba(99, 179, 237, 0.3)" : "none"}
                         >
                           <Text
                             fontSize="sm"
-                            color={msg.role === "user" ? "white" : "gray.800"}
+                            color="white"
                             whiteSpace="pre-wrap"
                             lineHeight="1.6"
                           >
@@ -1884,11 +1911,23 @@ ${conversationText}`,
             </Dialog.Body>
 
             {/* フッター */}
-            <Dialog.Footer bg="white" borderTop="1px solid" borderColor="gray.200" py={3}>
+            <Dialog.Footer
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
+              borderTop="1px solid"
+              borderColor="whiteAlpha.200"
+              py={3}
+            >
               <Button
-                colorScheme="teal"
-                borderRadius="full"
+                bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
+                color="cyan.100"
+                border="1px solid"
+                borderColor="cyan.400"
+                borderRadius="xl"
                 px={6}
+                _hover={{
+                  bg: "linear-gradient(135deg, rgba(99, 179, 237, 0.5), rgba(129, 230, 217, 0.5))",
+                  boxShadow: "0 0 15px rgba(99, 179, 237, 0.4)",
+                }}
                 onClick={() => setIsHistoryModalOpen(false)}
               >
                 閉じる
