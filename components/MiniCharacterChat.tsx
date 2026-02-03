@@ -1075,11 +1075,11 @@ ${CONTEXT_PROMPT}${taskInfo}
               borderWidth={isUser ? "6px 0 6px 8px" : "6px 8px 6px 0"}
               borderColor={isUser
                 ? "transparent transparent transparent #319795"
-                : "transparent #ffffff transparent transparent"
+                : "transparent rgba(255,255,255,0.85) transparent transparent"
               }
             />
             <Box
-              bg={isUser ? "teal.500" : "white"}
+              bg={isUser ? "teal.500" : "rgba(255,255,255,0.85)"}
               px={3}
               py={2}
               borderRadius="18px"
@@ -1217,10 +1217,10 @@ ${CONTEXT_PROMPT}${taskInfo}
               h="0"
               borderStyle="solid"
               borderWidth="6px 8px 6px 0"
-              borderColor="transparent #ffffff transparent transparent"
+              borderColor="transparent rgba(255,255,255,0.85) transparent transparent"
             />
             <Box
-              bg="white"
+              bg="rgba(255,255,255,0.85)"
               px={3}
               py={2}
               borderRadius="18px"
