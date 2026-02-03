@@ -1755,12 +1755,12 @@ ${conversationText}`,
             maxW="500px"
             maxH="80vh"
             mx={4}
-            bg="rgba(26, 26, 46, 0.85)"
-            backdropFilter="blur(10px)"
+            bg="linear-gradient(to bottom, rgba(45, 55, 72, 0.92), rgba(26, 32, 44, 0.95))"
+            backdropFilter="blur(12px)"
             borderRadius="xl"
-            border="2px solid"
-            borderColor="cyan.400"
-            boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
+            border="1px solid"
+            borderColor="rgba(99, 179, 237, 0.5)"
+            boxShadow="0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px rgba(99, 179, 237, 0.15)"
             overflow="hidden"
           >
             {/* ヘッダー装飾ライン */}
