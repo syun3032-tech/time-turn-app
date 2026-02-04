@@ -1755,13 +1755,27 @@ ${conversationText}`,
             maxW="500px"
             maxH="80vh"
             mx={4}
-            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
             borderRadius="xl"
             border="2px solid"
             borderColor="cyan.400"
             boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
             overflow="hidden"
+            p={0}
+            display="flex"
+            flexDirection="column"
+            position="relative"
           >
+            {/* 背景オーバーレイ - ダークグラデーション */}
+            <Box
+              position="absolute"
+              top={0}
+              left={0}
+              right={0}
+              bottom={0}
+              bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
+              zIndex={0}
+            />
+
             {/* ヘッダー装飾ライン */}
             <Box
               position="absolute"
@@ -1770,14 +1784,18 @@ ${conversationText}`,
               right={0}
               h="2px"
               bgGradient="linear(to-r, transparent, cyan.400, purple.400, transparent)"
+              zIndex={2}
             />
 
             {/* ヘッダー */}
-            <Dialog.Header
-              bgGradient="linear(to-r, rgba(99, 179, 237, 0.2), rgba(159, 122, 234, 0.2))"
+            <Box
+              position="relative"
+              zIndex={1}
               borderBottom="1px solid"
               borderColor="whiteAlpha.200"
               py={3}
+              px={4}
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.2), rgba(159, 122, 234, 0.2))"
             >
               <HStack gap={3}>
                 <Box
@@ -1813,12 +1831,14 @@ ${conversationText}`,
                 </VStack>
               </HStack>
               <Dialog.CloseTrigger color="whiteAlpha.800" _hover={{ bg: "whiteAlpha.200", color: "white" }} />
-            </Dialog.Header>
+            </Box>
 
             {/* メッセージエリア */}
-            <Dialog.Body
+            <Box
+              position="relative"
+              zIndex={1}
+              flex={1}
               overflowY="auto"
-              bg="transparent"
               p={3}
               css={{
                 "&::-webkit-scrollbar": { width: "6px" },
@@ -1836,42 +1856,35 @@ ${conversationText}`,
                     <Box
                       key={index}
                       p={3}
-                      borderRadius="xl"
-                      bg={msg.role === "user"
-                        ? "linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
-                        : "whiteAlpha.50"
-                      }
-                      border="1px solid"
-                      borderColor={msg.role === "user" ? "cyan.400" : "whiteAlpha.100"}
-                      boxShadow={msg.role === "user"
-                        ? "0 0 20px rgba(99, 179, 237, 0.3), inset 0 0 20px rgba(99, 179, 237, 0.1)"
-                        : "none"
-                      }
+                      borderRadius="lg"
+                      bg="transparent"
+                      borderBottom="1px solid"
+                      borderColor="whiteAlpha.200"
                       position="relative"
-                      overflow="hidden"
+                      pl={msg.role === "user" ? 3 : 4}
                     >
-                      {/* 選択時の光るエフェクト（ユーザー側のみ） */}
+                      {/* ユーザー側のライン */}
                       {msg.role === "user" && (
                         <Box
                           position="absolute"
-                          top={0}
+                          top={2}
+                          bottom={2}
                           right={0}
                           w="3px"
-                          h="100%"
                           bgGradient="linear(to-b, cyan.400, purple.400)"
-                          boxShadow="0 0 10px rgba(99, 179, 237, 0.8)"
+                          borderRadius="full"
                         />
                       )}
                       {/* 秘書ちゃん側のライン */}
                       {msg.role === "assistant" && (
                         <Box
                           position="absolute"
-                          top={0}
+                          top={2}
+                          bottom={2}
                           left={0}
                           w="3px"
-                          h="100%"
                           bgGradient="linear(to-b, purple.400, pink.400)"
-                          boxShadow="0 0 10px rgba(159, 122, 234, 0.8)"
+                          borderRadius="full"
                         />
                       )}
 
@@ -1879,8 +1892,8 @@ ${conversationText}`,
                         <Badge
                           size="sm"
                           bg={msg.role === "user"
-                            ? "linear-gradient(135deg, rgba(99, 179, 237, 0.8), rgba(129, 230, 217, 0.8))"
-                            : "linear-gradient(135deg, #f093fb, #f5576c)"
+                            ? "rgba(99, 179, 237, 0.4)"
+                            : "rgba(159, 122, 234, 0.4)"
                           }
                           color="white"
                           borderRadius="full"
@@ -1898,10 +1911,9 @@ ${conversationText}`,
                       </HStack>
                       <Text
                         fontSize="sm"
-                        color={msg.role === "user" ? "white" : "whiteAlpha.900"}
+                        color="whiteAlpha.900"
                         whiteSpace="pre-wrap"
                         lineHeight="1.6"
-                        textShadow={msg.role === "user" ? "0 0 10px rgba(255,255,255,0.3)" : "none"}
                       >
                         {msg.content}
                       </Text>
@@ -1909,14 +1921,17 @@ ${conversationText}`,
                   ))
                 )}
               </VStack>
-            </Dialog.Body>
+            </Box>
 
             {/* フッター */}
-            <Dialog.Footer
-              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
+            <HStack
+              position="relative"
+              zIndex={1}
               borderTop="1px solid"
               borderColor="whiteAlpha.100"
               py={3}
+              px={4}
+              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
             >
               <Text fontSize="xs" color="whiteAlpha.400" flex={1}>
                 TimeTurn - 秘書ちゃんと一緒に
@@ -1936,7 +1951,7 @@ ${conversationText}`,
               >
                 閉じる
               </Button>
-            </Dialog.Footer>
+            </HStack>
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>
