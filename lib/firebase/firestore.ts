@@ -29,7 +29,9 @@ import type {
   ConversationMessage,
   HearingProgress,
   HearingSummary,
-  UserKnowledge
+  UserKnowledge,
+  StructuredUserKnowledge,
+  ExtractedStructuredKnowledge
 } from './firestore-types'
 
 // Timestamp変換ヘルパー
@@ -782,4 +784,339 @@ export function formatKnowledgeForPrompt(knowledge: UserKnowledge | null): strin
 ${sections.join('\n')}
 ※この情報を踏まえて、パーソナライズされた会話をしてください。
 `
+}
+
+// ============================================
+// Structured User Knowledge（構造化ユーザーナレッジ）
+// ============================================
+
+/**
+ * 構造化ユーザーナレッジを取得
+ */
+export async function getStructuredKnowledge(userId: string): Promise<StructuredUserKnowledge | null> {
+  const docRef = doc(db, 'structuredKnowledge', userId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) return null
+
+  const data = docSnap.data()
+
+  // Timestamp -> Date変換
+  const convertInterests = (interests: any[]): StructuredUserKnowledge['interests'] => {
+    return (interests || []).map(i => ({
+      ...i,
+      firstMentionedAt: toDate(i.firstMentionedAt),
+      lastMentionedAt: toDate(i.lastMentionedAt),
+    }))
+  }
+
+  const convertDeepMotivations = (motivations: any[]): StructuredUserKnowledge['deepMotivations'] => {
+    return (motivations || []).map(m => ({
+      ...m,
+      detectedAt: toDate(m.detectedAt),
+    }))
+  }
+
+  const convertRecentContext = (contexts: any[]): StructuredUserKnowledge['recentContext'] => {
+    return (contexts || []).map(c => ({
+      ...c,
+      date: toDate(c.date),
+    }))
+  }
+
+  return {
+    userId,
+    basicInfo: data.basicInfo || {},
+    interests: convertInterests(data.interests),
+    deepMotivations: convertDeepMotivations(data.deepMotivations),
+    lifestyle: data.lifestyle || {},
+    emotionalPatterns: data.emotionalPatterns || [],
+    recentContext: convertRecentContext(data.recentContext),
+    interests_legacy: data.interests_legacy || [],
+    experiences: data.experiences || [],
+    personality: data.personality || [],
+    challenges: data.challenges || [],
+    goals: data.goals || [],
+    context: data.context || [],
+    updatedAt: toDate(data.updatedAt),
+  }
+}
+
+/**
+ * 構造化ユーザーナレッジを更新（マージ）
+ * 新しい情報を既存の情報にマージする
+ */
+export async function updateStructuredKnowledge(
+  userId: string,
+  extracted: ExtractedStructuredKnowledge
+): Promise<void> {
+  const docRef = doc(db, 'structuredKnowledge', userId)
+  const existing = await getStructuredKnowledge(userId)
+  const now = new Date()
+
+  // 基本情報のマージ
+  const mergedBasicInfo = {
+    ...(existing?.basicInfo || {}),
+    ...(extracted.basicInfo || {}),
+  }
+
+  // 興味のマージ（重複トピックは更新、新規は追加）
+  const mergedInterests = mergeInterests(
+    existing?.interests || [],
+    extracted.interests || [],
+    now
+  )
+
+  // 本質的欲求のマージ（重複は更新、新規は追加）
+  const mergedDeepMotivations = mergeDeepMotivations(
+    existing?.deepMotivations || [],
+    extracted.deepMotivations || [],
+    now
+  )
+
+  // 生活パターンのマージ
+  const mergedLifestyle = {
+    ...(existing?.lifestyle || {}),
+    ...(extracted.lifestyle || {}),
+  }
+
+  // 感情パターンのマージ（最大10件）
+  const mergedEmotionalPatterns = mergeEmotionalPatterns(
+    existing?.emotionalPatterns || [],
+    extracted.emotionalPatterns || []
+  )
+
+  // 直近コンテキストの追加（最大5件、古いものから削除）
+  const mergedRecentContext = mergeRecentContext(
+    existing?.recentContext || [],
+    extracted.recentContext,
+    now
+  )
+
+  const mergedData: Partial<StructuredUserKnowledge> = {
+    basicInfo: mergedBasicInfo,
+    interests: mergedInterests,
+    deepMotivations: mergedDeepMotivations,
+    lifestyle: mergedLifestyle,
+    emotionalPatterns: mergedEmotionalPatterns,
+    recentContext: mergedRecentContext,
+    updatedAt: now,
+  }
+
+  await setDoc(docRef, mergedData, { merge: true })
+}
+
+/**
+ * 興味のマージロジック
+ * - 同じトピックは深度・言及回数を更新
+ * - 新規トピックは追加
+ * - 最大20件に制限
+ */
+function mergeInterests(
+  existing: StructuredUserKnowledge['interests'],
+  newItems: NonNullable<ExtractedStructuredKnowledge['interests']>,
+  now: Date
+): StructuredUserKnowledge['interests'] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    const existingIndex = merged.findIndex(e => e.topic === newItem.topic)
+
+    if (existingIndex >= 0) {
+      // 既存トピックの更新
+      const existingItem = merged[existingIndex]
+      const newMentionCount = (existingItem.mentionCount || 1) + 1
+
+      // 深度の自動アップグレード
+      let newDepth = existingItem.depth
+      if (newMentionCount >= 5) {
+        newDepth = 'passionate'
+      } else if (newMentionCount >= 3) {
+        newDepth = 'repeated'
+      }
+      // 明示的に指定された深度があればそれを優先
+      if (newItem.depth === 'passionate') {
+        newDepth = 'passionate'
+      }
+
+      merged[existingIndex] = {
+        ...existingItem,
+        motivation: newItem.motivation || existingItem.motivation,
+        depth: newDepth,
+        lastMentionedAt: now,
+        mentionCount: newMentionCount,
+      }
+    } else {
+      // 新規トピックの追加
+      merged.push({
+        topic: newItem.topic,
+        motivation: newItem.motivation,
+        depth: newItem.depth || 'mention',
+        firstMentionedAt: now,
+        lastMentionedAt: now,
+        mentionCount: 1,
+      })
+    }
+  }
+
+  // 最大20件に制限（最後に言及されたものを優先）
+  return merged
+    .sort((a, b) => b.lastMentionedAt.getTime() - a.lastMentionedAt.getTime())
+    .slice(0, 20)
+}
+
+/**
+ * 本質的欲求のマージロジック
+ * - 同じ欲求は確信度を更新
+ * - 新規は追加
+ * - 最大10件に制限
+ */
+function mergeDeepMotivations(
+  existing: StructuredUserKnowledge['deepMotivations'],
+  newItems: NonNullable<ExtractedStructuredKnowledge['deepMotivations']>,
+  now: Date
+): StructuredUserKnowledge['deepMotivations'] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    const existingIndex = merged.findIndex(e => e.desire === newItem.desire)
+
+    if (existingIndex >= 0) {
+      // 既存欲求の確信度を上げる
+      const existingItem = merged[existingIndex]
+      let newConfidence = existingItem.confidence
+      if (existingItem.confidence === 'low') {
+        newConfidence = 'medium'
+      } else if (existingItem.confidence === 'medium') {
+        newConfidence = 'high'
+      }
+      // 明示的に指定された確信度があればそれを優先
+      if (newItem.confidence === 'high') {
+        newConfidence = 'high'
+      }
+
+      merged[existingIndex] = {
+        ...existingItem,
+        derivedFrom: newItem.derivedFrom || existingItem.derivedFrom,
+        confidence: newConfidence,
+      }
+    } else {
+      // 新規欲求の追加
+      merged.push({
+        desire: newItem.desire,
+        derivedFrom: newItem.derivedFrom,
+        confidence: newItem.confidence || 'low',
+        detectedAt: now,
+      })
+    }
+  }
+
+  // 最大10件に制限（高確信度を優先）
+  const confidenceOrder = { high: 0, medium: 1, low: 2 }
+  return merged
+    .sort((a, b) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence])
+    .slice(0, 10)
+}
+
+/**
+ * 感情パターンのマージロジック
+ * - 同じトリガーは更新
+ * - 新規は追加
+ * - 最大10件に制限
+ */
+function mergeEmotionalPatterns(
+  existing: StructuredUserKnowledge['emotionalPatterns'],
+  newItems: NonNullable<ExtractedStructuredKnowledge['emotionalPatterns']>
+): StructuredUserKnowledge['emotionalPatterns'] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    const existingIndex = merged.findIndex(e => e.trigger === newItem.trigger)
+
+    if (existingIndex >= 0) {
+      // 既存パターンの更新
+      merged[existingIndex] = {
+        ...merged[existingIndex],
+        reaction: newItem.reaction || merged[existingIndex].reaction,
+        effectiveResponse: newItem.effectiveResponse || merged[existingIndex].effectiveResponse,
+      }
+    } else {
+      // 新規パターンの追加
+      merged.push({
+        trigger: newItem.trigger,
+        reaction: newItem.reaction,
+        effectiveResponse: newItem.effectiveResponse || '',
+      })
+    }
+  }
+
+  // 最大10件に制限
+  return merged.slice(-10)
+}
+
+/**
+ * 直近コンテキストのマージロジック
+ * - 新しいコンテキストを先頭に追加
+ * - 最大5件に制限
+ */
+function mergeRecentContext(
+  existing: StructuredUserKnowledge['recentContext'],
+  newItem: ExtractedStructuredKnowledge['recentContext'] | undefined,
+  now: Date
+): StructuredUserKnowledge['recentContext'] {
+  if (!newItem) return existing
+
+  const newContext = {
+    date: now,
+    summary: newItem.summary,
+    mood: newItem.mood,
+  }
+
+  // 新しいコンテキストを先頭に追加し、最大5件に制限
+  return [newContext, ...existing].slice(0, 5)
+}
+
+/**
+ * 従来のUserKnowledgeから構造化ナレッジにマイグレーション
+ */
+export async function migrateToStructuredKnowledge(userId: string): Promise<void> {
+  const legacy = await getUserKnowledge(userId)
+  if (!legacy) return
+
+  const existingStructured = await getStructuredKnowledge(userId)
+  if (existingStructured && existingStructured.interests.length > 0) {
+    // すでにマイグレーション済み
+    return
+  }
+
+  const now = new Date()
+
+  // 従来の興味を構造化興味に変換
+  const structuredInterests: StructuredUserKnowledge['interests'] =
+    (legacy.interests || []).map(topic => ({
+      topic,
+      depth: 'mention' as const,
+      firstMentionedAt: now,
+      lastMentionedAt: now,
+      mentionCount: 1,
+    }))
+
+  const migrated: Partial<StructuredUserKnowledge> = {
+    basicInfo: {},
+    interests: structuredInterests,
+    deepMotivations: [],
+    lifestyle: {},
+    emotionalPatterns: [],
+    recentContext: [],
+    interests_legacy: legacy.interests,
+    experiences: legacy.experiences,
+    personality: legacy.personality,
+    challenges: legacy.challenges,
+    goals: legacy.goals,
+    context: legacy.context,
+    updatedAt: now,
+  }
+
+  const docRef = doc(db, 'structuredKnowledge', userId)
+  await setDoc(docRef, migrated)
 }

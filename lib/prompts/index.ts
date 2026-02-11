@@ -16,7 +16,7 @@ export interface UserProfileForPrompt {
 }
 
 /**
- * ユーザーナレッジ（雑談から学んだ情報）
+ * ユーザーナレッジ（雑談から学んだ情報）- 従来版
  */
 export interface UserKnowledgeForPrompt {
   interests?: string[];
@@ -25,6 +25,41 @@ export interface UserKnowledgeForPrompt {
   challenges?: string[];
   goals?: string[];
   context?: string[];
+}
+
+/**
+ * 構造化ユーザーナレッジ（プロンプト用）
+ */
+export interface StructuredUserKnowledgeForPrompt {
+  basicInfo?: {
+    occupation?: string;
+    major?: string;
+    partTimeJob?: string;
+    livingAlone?: boolean;
+  };
+  interests?: Array<{
+    topic: string;
+    motivation?: string;
+    depth: 'mention' | 'repeated' | 'passionate';
+  }>;
+  deepMotivations?: Array<{
+    desire: string;
+    confidence: 'low' | 'medium' | 'high';
+  }>;
+  lifestyle?: {
+    activeHours?: 'morning' | 'afternoon' | 'night';
+    busyDays?: string[];
+    procrastination?: boolean;
+  };
+  emotionalPatterns?: Array<{
+    trigger: string;
+    reaction: string;
+    effectiveResponse?: string;
+  }>;
+  recentContext?: Array<{
+    summary: string;
+    mood: 'good' | 'neutral' | 'low';
+  }>;
 }
 
 export const getProfileContext = (
@@ -78,6 +113,126 @@ ${sections.join("\n")}
 };
 
 /**
+ * 構造化プロファイルコンテキストを生成
+ * 深度・確信度・直近コンテキストを考慮した高度なプロンプト注入
+ */
+export const getStructuredProfileContext = (
+  profile?: UserProfileForPrompt | null,
+  knowledge?: StructuredUserKnowledgeForPrompt | null
+): string => {
+  if (!knowledge) return getProfileContext(profile, null);
+
+  const sections: string[] = [];
+
+  // 基本情報
+  if (knowledge.basicInfo) {
+    const { occupation, major, partTimeJob, livingAlone } = knowledge.basicInfo;
+    if (occupation) sections.push(`・${occupation}`);
+    if (major) sections.push(`・${major}専攻`);
+    if (partTimeJob) sections.push(`・${partTimeJob}のバイト`);
+    if (livingAlone !== undefined) sections.push(`・${livingAlone ? '一人暮らし' : '実家暮らし'}`);
+  }
+
+  // プロフィールからの情報
+  if (profile) {
+    if (profile.nickname) {
+      sections.unshift(`・名前: ${profile.nickname}さん`);
+    }
+    if (profile.occupation && !knowledge.basicInfo?.occupation) {
+      sections.push(`・職業: ${profile.occupation}`);
+    }
+  }
+
+  // 興味（passionate > repeated > mentionの順で表示）
+  if (knowledge.interests && knowledge.interests.length > 0) {
+    const passionateInterests = knowledge.interests
+      .filter(i => i.depth === 'passionate')
+      .map(i => i.motivation ? `${i.topic}（${i.motivation}）` : i.topic);
+
+    const repeatedInterests = knowledge.interests
+      .filter(i => i.depth === 'repeated')
+      .map(i => i.topic);
+
+    if (passionateInterests.length > 0) {
+      sections.push(`・かなり興味あり: ${passionateInterests.join('、')}`);
+    }
+    if (repeatedInterests.length > 0) {
+      sections.push(`・興味あり: ${repeatedInterests.join('、')}`);
+    }
+  }
+
+  // 本質的欲求（高確信度のみ）
+  if (knowledge.deepMotivations && knowledge.deepMotivations.length > 0) {
+    const highConfidence = knowledge.deepMotivations
+      .filter(m => m.confidence === 'high')
+      .map(m => m.desire);
+    const mediumConfidence = knowledge.deepMotivations
+      .filter(m => m.confidence === 'medium')
+      .map(m => m.desire);
+
+    if (highConfidence.length > 0) {
+      sections.push(`・本当にやりたいこと: ${highConfidence.join('、')}`);
+    }
+    if (mediumConfidence.length > 0) {
+      sections.push(`・やりたそうなこと: ${mediumConfidence.join('、')}`);
+    }
+  }
+
+  // 生活パターン
+  if (knowledge.lifestyle) {
+    const { activeHours, busyDays, procrastination } = knowledge.lifestyle;
+    if (activeHours) {
+      const hourLabel = activeHours === 'night' ? '夜型' : activeHours === 'morning' ? '朝型' : '昼型';
+      sections.push(`・${hourLabel}`);
+    }
+    if (busyDays && busyDays.length > 0) {
+      sections.push(`・${busyDays.join('・')}曜日はバイト`);
+    }
+    if (procrastination) {
+      sections.push(`・ギリギリタイプ`);
+    }
+  }
+
+  // 感情パターン
+  if (knowledge.emotionalPatterns && knowledge.emotionalPatterns.length > 0) {
+    const patterns = knowledge.emotionalPatterns.slice(0, 2);
+    for (const pattern of patterns) {
+      if (pattern.effectiveResponse) {
+        sections.push(`・${pattern.trigger}で${pattern.reaction}傾向 → ${pattern.effectiveResponse}が効果的`);
+      }
+    }
+  }
+
+  // 直近コンテキスト
+  if (knowledge.recentContext && knowledge.recentContext.length > 0) {
+    const recent = knowledge.recentContext[0];
+    const moodLabel = recent.mood === 'good' ? '良い' : recent.mood === 'low' ? '低め' : '普通';
+    sections.push(`・最近: ${recent.summary}（気分: ${moodLabel}）`);
+  }
+
+  if (sections.length === 0) return getProfileContext(profile, null);
+
+  // 直近の気分に応じた行動指針
+  const recentMood = knowledge.recentContext?.[0]?.mood;
+  let behaviorGuide = '';
+  if (recentMood === 'low') {
+    behaviorGuide = '\n- 最近大変そうだったので、今日は軽めの声かけから';
+  } else if (recentMood === 'good') {
+    behaviorGuide = '\n- 最近調子良さそう！前向きな話ができそう';
+  }
+
+  return `
+【秘書ちゃんが知っていること】
+${sections.join("\n")}
+
+【行動指針】
+- 上記を「知っている前提」で会話する
+- 「前に言ってましたよね」は自然に使ってOK
+- 過去の話題を覚えていることをさりげなく示す${behaviorGuide}
+`;
+};
+
+/**
  * 雑談モード: 目標の話が出る前の普通の会話
  * ユーザーのことを知り、信頼関係を築く
  */
@@ -101,6 +256,26 @@ ${getProfileContext(profile, knowledge)}
 - 自分の意見や感想を言う（「私も〇〇好きですけど」）
 - 心配になったらツッコむ（「それ大丈夫ですか？」）
 - 質問攻めしない、話題転換は自然に
+
+【情報収集の原則（超重要）】
+■ 1回の会話で1つだけ深掘りする
+- 複数の質問を一度にしない
+- 相手が答えたら、その答えについて1つだけ聞く
+
+■ 質問の仕方
+- 「なんで？」より「何がきっかけ？」「どういうところが好き？」
+- 興味の話題が出たら「へぇ、どういうところが好き？」
+- 本質（なぜそう思うか）を自然に引き出す
+
+■ 絶対に尋問しない
+- 「それで、他には？」「次は？」と畳みかけない
+- 1つ聞いたら、相手の反応を待つ
+- 相手が話したくなさそうなら引く
+
+■ さりげない情報収集
+- 生活パターン: 「いつも〇〇時くらいに起きてるんですか？」
+- バイト: 「今日バイトでしたっけ？」
+- 趣味: 「最近〇〇やってます？」
 
 【⚠️ 超重要: ツッコミで返す！】
 ■ ユーザーが変なこと言ったらツッコむ！

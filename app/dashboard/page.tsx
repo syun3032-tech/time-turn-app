@@ -9,11 +9,11 @@ import { Dialog } from "@chakra-ui/react";
 import { chatWithAISeamless, AIProvider } from "@/lib/ai-service";
 import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree, generateNodeId } from "@/lib/task-tree-storage";
 import { TaskNode } from "@/types/task-tree";
-import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, type UserKnowledgeForPrompt } from "@/lib/prompts";
+import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, getStructuredProfileContext, type UserKnowledgeForPrompt, type StructuredUserKnowledgeForPrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getUserKnowledge, updateUserKnowledge, type UsageData } from "@/lib/firebase/firestore";
-import { extractKnowledgeFromConversation, shouldExtractKnowledge } from "@/lib/knowledge-extractor";
-import type { UserKnowledge } from "@/lib/firebase/firestore-types";
+import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getUserKnowledge, updateUserKnowledge, getStructuredKnowledge, updateStructuredKnowledge, migrateToStructuredKnowledge, type UsageData } from "@/lib/firebase/firestore";
+import { extractKnowledgeFromConversation, shouldExtractKnowledge, extractStructuredKnowledge, shouldExtractStructuredKnowledge } from "@/lib/knowledge-extractor";
+import type { UserKnowledge, StructuredUserKnowledge } from "@/lib/firebase/firestore-types";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
@@ -22,7 +22,7 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { NotificationPermission } from "@/components/NotificationPermission";
-import { FiSettings, FiMenu, FiSend } from "react-icons/fi";
+import { FiSettings, FiMenu, FiSend, FiX } from "react-icons/fi";
 import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
 import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
 
@@ -112,7 +112,10 @@ export default function DashboardPage() {
 
   // ユーザーナレッジ（雑談から学んだ情報）
   const [userKnowledge, setUserKnowledge] = useState<UserKnowledge | null>(null);
+  // 構造化ユーザーナレッジ
+  const [structuredKnowledge, setStructuredKnowledge] = useState<StructuredUserKnowledge | null>(null);
   const [lastExtractionCount, setLastExtractionCount] = useState(0);
+  const [lastStructuredExtractionCount, setLastStructuredExtractionCount] = useState(0);
 
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
@@ -178,14 +181,26 @@ export default function DashboardPage() {
     loadTaskTree();
   }, [user]);
 
-  // ユーザーナレッジを読み込み
+  // ユーザーナレッジを読み込み（従来版と構造化版両方）
   useEffect(() => {
     if (!user) return;
 
     const loadKnowledge = async () => {
       try {
+        // 従来版
         const knowledge = await getUserKnowledge(user.uid);
         setUserKnowledge(knowledge);
+
+        // 構造化版
+        let structured = await getStructuredKnowledge(user.uid);
+
+        // 構造化版がなければマイグレーション
+        if (!structured && knowledge) {
+          await migrateToStructuredKnowledge(user.uid);
+          structured = await getStructuredKnowledge(user.uid);
+        }
+
+        setStructuredKnowledge(structured);
       } catch (error) {
         console.error("Failed to load knowledge:", error);
       }
@@ -955,7 +970,7 @@ ${conversationText}`,
       ];
       const hasTaskKeyword = motivationKeywords.some(keyword => message.includes(keyword));
 
-      // ナレッジをプロンプト用に変換
+      // ナレッジをプロンプト用に変換（従来版）
       const knowledgeForPrompt: UserKnowledgeForPrompt | null = userKnowledge ? {
         interests: userKnowledge.interests,
         experiences: userKnowledge.experiences,
@@ -964,6 +979,31 @@ ${conversationText}`,
         goals: userKnowledge.goals,
         context: userKnowledge.context,
       } : null;
+
+      // 構造化ナレッジをプロンプト用に変換
+      const structuredKnowledgeForPrompt: StructuredUserKnowledgeForPrompt | null = structuredKnowledge ? {
+        basicInfo: structuredKnowledge.basicInfo,
+        interests: structuredKnowledge.interests.map(i => ({
+          topic: i.topic,
+          motivation: i.motivation,
+          depth: i.depth,
+        })),
+        deepMotivations: structuredKnowledge.deepMotivations.map(m => ({
+          desire: m.desire,
+          confidence: m.confidence,
+        })),
+        lifestyle: structuredKnowledge.lifestyle,
+        emotionalPatterns: structuredKnowledge.emotionalPatterns,
+        recentContext: structuredKnowledge.recentContext.map(c => ({
+          summary: c.summary,
+          mood: c.mood,
+        })),
+      } : null;
+
+      // 構造化プロファイルコンテキストを生成
+      const profileContext = structuredKnowledgeForPrompt
+        ? getStructuredProfileContext(userProfile, structuredKnowledgeForPrompt)
+        : '';
 
       if (taskBreakdownStage === "normal" && hasTaskKeyword) {
         setTaskBreakdownStage("hearing");
@@ -974,7 +1014,15 @@ ${conversationText}`,
         systemPrompt = getInterestStagePrompt(userProfile);
       } else if (taskBreakdownStage === "normal") {
         // 目標キーワードがない場合は雑談モード
+        // 構造化プロファイルがあればそれを使用
         systemPrompt = getChatModePrompt(userProfile, knowledgeForPrompt);
+        // 構造化プロファイルコンテキストを追加
+        if (profileContext) {
+          systemPrompt = systemPrompt.replace(
+            '【ユーザーについて知っていること】',
+            profileContext.trim()
+          );
+        }
       }
       // === Stage 2: Hearing ===
       // ヒアリング中 - 進捗を更新して次の質問を促す
@@ -1128,24 +1176,46 @@ ${conversationText}`,
 
         // ナレッジ抽出（バックグラウンド処理）
         // 雑談モード（normal）で十分な会話がある場合のみ
-        if (taskBreakdownStage === "normal" && shouldExtractKnowledge(allMessages.length, lastExtractionCount)) {
-          // 非同期で実行（UIをブロックしない）
-          extractKnowledgeFromConversation(allMessages).then(async (extracted) => {
-            if (extracted && user) {
-              try {
-                await updateUserKnowledge(user.uid, extracted);
-                // ローカル状態も更新
-                const updatedKnowledge = await getUserKnowledge(user.uid);
-                setUserKnowledge(updatedKnowledge);
-                setLastExtractionCount(allMessages.length);
-                console.log("Knowledge extracted and saved:", extracted);
-              } catch (err) {
-                console.error("Failed to save knowledge:", err);
+        if (taskBreakdownStage === "normal") {
+          // 構造化ナレッジ抽出（より頻繁に）
+          if (shouldExtractStructuredKnowledge(allMessages.length, lastStructuredExtractionCount)) {
+            extractStructuredKnowledge(allMessages, structuredKnowledge).then(async (extracted) => {
+              if (extracted && user) {
+                try {
+                  await updateStructuredKnowledge(user.uid, extracted);
+                  // ローカル状態も更新
+                  const updatedStructured = await getStructuredKnowledge(user.uid);
+                  setStructuredKnowledge(updatedStructured);
+                  setLastStructuredExtractionCount(allMessages.length);
+                  console.log("Structured knowledge extracted and saved:", extracted);
+                } catch (err) {
+                  console.error("Failed to save structured knowledge:", err);
+                }
               }
-            }
-          }).catch(err => {
-            console.error("Knowledge extraction failed:", err);
-          });
+            }).catch(err => {
+              console.error("Structured knowledge extraction failed:", err);
+            });
+          }
+
+          // 従来版ナレッジ抽出（後方互換）
+          if (shouldExtractKnowledge(allMessages.length, lastExtractionCount)) {
+            extractKnowledgeFromConversation(allMessages).then(async (extracted) => {
+              if (extracted && user) {
+                try {
+                  await updateUserKnowledge(user.uid, extracted);
+                  // ローカル状態も更新
+                  const updatedKnowledge = await getUserKnowledge(user.uid);
+                  setUserKnowledge(updatedKnowledge);
+                  setLastExtractionCount(allMessages.length);
+                  console.log("Knowledge extracted and saved:", extracted);
+                } catch (err) {
+                  console.error("Failed to save knowledge:", err);
+                }
+              }
+            }).catch(err => {
+              console.error("Knowledge extraction failed:", err);
+            });
+          }
         }
       } else {
         // レート制限やクォータエラーの検出
@@ -1439,23 +1509,30 @@ ${conversationText}`,
           )}
         </Box>
 
-        {/* 下部固定エリア（会話履歴ボタン + 入力欄） - モバイル版 */}
+        {/* 下部固定エリア（ログボタン + 入力欄 + 送信ボタン） - モバイル版 */}
         <Box w="90%" maxW="340px" flexShrink={0} pb={2}>
-          {/* 会話履歴ボタン */}
-          {messages.length > 0 && (
-            <Button
-              size="xs"
-              variant="ghost"
-              colorScheme="gray"
-              onClick={() => setIsHistoryModalOpen(true)}
-              mb={2}
-              w="100%"
-            >
-              📝 会話履歴を見る ({messages.length / 2}往復)
-            </Button>
-          )}
           {/* 入力欄と送信ボタンを横並びに */}
           <HStack gap={2} w="100%">
+            {/* ログボタン（会話履歴） */}
+            <VStack
+              gap={0}
+              as="button"
+              onClick={() => setIsHistoryModalOpen(true)}
+              bg="white"
+              borderRadius="lg"
+              p={1}
+              minW="44px"
+              h="36px"
+              justifyContent="center"
+              boxShadow="sm"
+              border="1px solid"
+              borderColor="gray.200"
+              _hover={{ bg: "gray.50", borderColor: "teal.300" }}
+              flexShrink={0}
+            >
+              <Box color="orange.600" fontSize="14px" lineHeight={1}>📋</Box>
+              <Text fontSize="8px" color="orange.700" fontWeight="bold">ログ</Text>
+            </VStack>
             <Input
               placeholder={
                 taskBreakdownStage === "output"
@@ -1664,64 +1741,77 @@ ${conversationText}`,
             />
           )}
 
-          {/* 会話履歴ボタン - PC版 */}
-          {messages.length > 0 && (
-            <Button
-              size="lg"
-              variant="ghost"
-              colorScheme="gray"
-              onClick={() => setIsHistoryModalOpen(true)}
-              maxW="fit-content"
-            >
-              📝 会話履歴を見る ({messages.length / 2}往復)
-            </Button>
-          )}
-
-          {/* チャット入力欄 - PC版 */}
+          {/* チャット入力欄 - PC版（ログボタン + 入力欄 + 送信ボタン） */}
           <Box maxW="600px" w="100%">
             <VStack gap={4}>
-              <Input
-                placeholder={
-                  taskBreakdownStage === "output"
-                    ? "タスクについて何かあれば..."
-                    : taskBreakdownStage === "proposal"
-                    ? "「お願い」「やろう」など..."
-                    : taskBreakdownStage === "hearing"
-                    ? "気軽に答えてください..."
-                    : "「〜したい」と話してみてください..."
-                }
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  // Enterキーで送信（IME変換中は除く）
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
-                    e.preventDefault();
-                    handleSendMessage();
+              <HStack gap={3} w="100%">
+                {/* ログボタン（会話履歴） */}
+                <VStack
+                  gap={1}
+                  as="button"
+                  onClick={() => setIsHistoryModalOpen(true)}
+                  bg="white"
+                  borderRadius="xl"
+                  p={2}
+                  minW="60px"
+                  h="60px"
+                  justifyContent="center"
+                  boxShadow="md"
+                  border="1px solid"
+                  borderColor="gray.200"
+                  _hover={{ bg: "gray.50", borderColor: "teal.300", boxShadow: "lg" }}
+                  flexShrink={0}
+                  transition="all 0.2s"
+                >
+                  <Box color="orange.600" fontSize="22px" lineHeight={1}>📋</Box>
+                  <Text fontSize="10px" color="orange.700" fontWeight="bold">ログ</Text>
+                </VStack>
+                <Input
+                  placeholder={
+                    taskBreakdownStage === "output"
+                      ? "タスクについて何かあれば..."
+                      : taskBreakdownStage === "proposal"
+                      ? "「お願い」「やろう」など..."
+                      : taskBreakdownStage === "hearing"
+                      ? "気軽に答えてください..."
+                      : "「〜したい」と話してみてください..."
                   }
-                }}
-                bg="white"
-                borderRadius="lg"
-                disabled={isLoading}
-                color="gray.900"
-                fontWeight="medium"
-                fontSize="lg"
-                size="lg"
-                h="60px"
-                px={5}
-                _placeholder={{ color: "gray.400" }}
-              />
-              <Button
-                colorScheme="teal"
-                w="100%"
-                size="lg"
-                h="56px"
-                fontSize="lg"
-                onClick={handleSendMessage}
-                loading={isLoading}
-                disabled={!message.trim() || isLoading}
-              >
-                {isLoading ? "送信中..." : "送信"}
-              </Button>
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enterキーで送信（IME変換中は除く）
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  bg="white"
+                  borderRadius="lg"
+                  disabled={isLoading}
+                  color="gray.900"
+                  fontWeight="medium"
+                  fontSize="lg"
+                  size="lg"
+                  h="60px"
+                  px={5}
+                  flex={1}
+                  _placeholder={{ color: "gray.400" }}
+                />
+                <IconButton
+                  aria-label="送信"
+                  colorScheme="teal"
+                  size="lg"
+                  h="60px"
+                  w="60px"
+                  onClick={handleSendMessage}
+                  loading={isLoading}
+                  disabled={!message.trim() || isLoading}
+                  flexShrink={0}
+                  borderRadius="xl"
+                >
+                  <FiSend size={24} />
+                </IconButton>
+              </HStack>
 
               {/* タスク反映ボタン - PC版 */}
               {taskBreakdownStage === "output" && messages.length >= 4 && (
@@ -1747,35 +1837,41 @@ ${conversationText}`,
       {/* ボトムナビ */}
       <NavTabs />
 
-      {/* 会話履歴モーダル - サイドバーと同じスタイル */}
-      <Dialog.Root open={isHistoryModalOpen} onOpenChange={(e) => setIsHistoryModalOpen(e.open)}>
-        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
-          <Dialog.Content
+      {/* 会話履歴モーダル - 自前実装（Dialogの白背景問題を回避） */}
+      {isHistoryModalOpen && (
+        <>
+          {/* オーバーレイ */}
+          <Box
+            position="fixed"
+            top={0}
+            left={0}
+            right={0}
+            bottom={0}
+            bg="blackAlpha.600"
+            backdropFilter="blur(4px)"
+            zIndex={998}
+            onClick={() => setIsHistoryModalOpen(false)}
+          />
+
+          {/* モーダル本体 */}
+          <Box
+            position="fixed"
+            top="50%"
+            left="50%"
+            transform="translate(-50%, -50%)"
+            w="90%"
             maxW="500px"
             maxH="80vh"
-            mx={4}
+            bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
             borderRadius="xl"
             border="2px solid"
             borderColor="cyan.400"
             boxShadow="0 0 40px rgba(99, 179, 237, 0.3)"
             overflow="hidden"
-            p={0}
             display="flex"
             flexDirection="column"
-            position="relative"
+            zIndex={999}
           >
-            {/* 背景オーバーレイ - ダークグラデーション */}
-            <Box
-              position="absolute"
-              top={0}
-              left={0}
-              right={0}
-              bottom={0}
-              bgGradient="linear(to-b, #1a1a2e, #16213e, #0f3460)"
-              zIndex={0}
-            />
-
             {/* ヘッダー装飾ライン */}
             <Box
               position="absolute"
@@ -1790,7 +1886,6 @@ ${conversationText}`,
             {/* ヘッダー */}
             <Box
               position="relative"
-              zIndex={1}
               borderBottom="1px solid"
               borderColor="whiteAlpha.200"
               py={3}
@@ -1816,27 +1911,34 @@ ${conversationText}`,
                     objectPosition="center top"
                   />
                 </Box>
-                <VStack align="start" gap={0}>
-                  <Dialog.Title
+                <VStack align="start" gap={0} flex={1}>
+                  <Text
                     color="white"
                     fontWeight="bold"
                     fontSize="lg"
                     textShadow="0 0 10px rgba(99, 179, 237, 0.5)"
                   >
                     会話履歴
-                  </Dialog.Title>
+                  </Text>
                   <Text fontSize="xs" color="cyan.200">
                     {messages.length > 0 ? `${Math.ceil(messages.length / 2)}往復` : "Chat History"}
                   </Text>
                 </VStack>
+                <IconButton
+                  aria-label="閉じる"
+                  size="sm"
+                  variant="ghost"
+                  color="whiteAlpha.800"
+                  _hover={{ bg: "whiteAlpha.200", color: "white" }}
+                  onClick={() => setIsHistoryModalOpen(false)}
+                >
+                  <FiX size={18} />
+                </IconButton>
               </HStack>
-              <Dialog.CloseTrigger color="whiteAlpha.800" _hover={{ bg: "whiteAlpha.200", color: "white" }} />
             </Box>
 
             {/* メッセージエリア */}
             <Box
-              position="relative"
-              zIndex={1}
               flex={1}
               overflowY="auto"
               p={3}
@@ -1902,7 +2004,7 @@ ${conversationText}`,
                         >
                           {msg.role === "user" ? "あなた" : "秘書ちゃん"}
                         </Badge>
-                        <Text fontSize="xs" color="whiteAlpha.500">
+                        <Text fontSize="xs" color="cyan.300">
                           {msg.role === "user"
                             ? `${Math.floor((index + 1) / 2) + 1}回目`
                             : index === 0 ? "最初" : `${Math.floor(index / 2) + 1}回目`
@@ -1911,7 +2013,7 @@ ${conversationText}`,
                       </HStack>
                       <Text
                         fontSize="sm"
-                        color="whiteAlpha.900"
+                        color="white"
                         whiteSpace="pre-wrap"
                         lineHeight="1.6"
                       >
@@ -1923,38 +2025,9 @@ ${conversationText}`,
               </VStack>
             </Box>
 
-            {/* フッター */}
-            <HStack
-              position="relative"
-              zIndex={1}
-              borderTop="1px solid"
-              borderColor="whiteAlpha.100"
-              py={3}
-              px={4}
-              bgGradient="linear(to-r, rgba(99, 179, 237, 0.1), rgba(159, 122, 234, 0.1))"
-            >
-              <Text fontSize="xs" color="whiteAlpha.400" flex={1}>
-                TimeTurn - 秘書ちゃんと一緒に
-              </Text>
-              <Button
-                bg="linear-gradient(135deg, rgba(99, 179, 237, 0.3), rgba(129, 230, 217, 0.3))"
-                color="cyan.100"
-                border="1px solid"
-                borderColor="cyan.400"
-                borderRadius="xl"
-                px={6}
-                _hover={{
-                  bg: "linear-gradient(135deg, rgba(99, 179, 237, 0.5), rgba(129, 230, 217, 0.5))",
-                  boxShadow: "0 0 15px rgba(99, 179, 237, 0.4)",
-                }}
-                onClick={() => setIsHistoryModalOpen(false)}
-              >
-                閉じる
-              </Button>
-            </HStack>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Dialog.Root>
+          </Box>
+        </>
+      )}
 
       {/* タスクツリー追加確認モーダル */}
       <Dialog.Root open={isConfirmModalOpen} onOpenChange={(e) => setIsConfirmModalOpen(e.open)}>

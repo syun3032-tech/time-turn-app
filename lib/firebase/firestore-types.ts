@@ -186,7 +186,7 @@ export interface ConversationMessage {
 }
 
 /**
- * ユーザーナレッジ（雑談から抽出した情報）
+ * ユーザーナレッジ（雑談から抽出した情報）- 従来版
  */
 export interface UserKnowledge {
   userId: string
@@ -197,4 +197,97 @@ export interface UserKnowledge {
   goals: string[]           // 将来の夢・目標（「フリーランス」「海外移住」など）
   context: string[]         // その他の文脈情報（「大学生」「仕事忙しい」など）
   updatedAt: Date
+}
+
+/**
+ * 構造化ユーザーナレッジ（深度・確信度・動機付き）
+ * 日常会話から自然にユーザーを知り、蓄積し、活かす「相棒感」を実現
+ */
+export interface StructuredUserKnowledge {
+  userId: string
+
+  // === 基本情報 ===
+  basicInfo: {
+    occupation?: string        // 大学2年、会社員など
+    major?: string            // 専攻（マーケティング、情報工学など）
+    partTimeJob?: string      // バイト先（飲食バイト、コンビニなど）
+    livingAlone?: boolean     // 一人暮らしかどうか
+  }
+
+  // === 興味・関心（構造化） ===
+  interests: Array<{
+    topic: string             // プログラミング、英語学習など
+    motivation?: string       // 自分でサービス作りたい、海外旅行したいなど
+    depth: 'mention' | 'repeated' | 'passionate'  // 言及レベル
+    firstMentionedAt: Date    // 初めて言及された日時
+    lastMentionedAt: Date     // 最後に言及された日時
+    mentionCount?: number     // 言及回数
+  }>
+
+  // === 本質的欲求（Whyの層） ===
+  deepMotivations: Array<{
+    desire: string            // 自分の力で稼ぎたい、認められたいなど
+    derivedFrom: string       // 「バイトずっとはやだ」発言から、など
+    confidence: 'low' | 'medium' | 'high'  // 確信度
+    detectedAt: Date          // 検出日時
+  }>
+
+  // === 生活パターン ===
+  lifestyle: {
+    activeHours?: 'morning' | 'afternoon' | 'night'  // 活動時間帯
+    busyDays?: string[]       // 忙しい曜日（["火", "木"]など）
+    procrastination?: boolean // ギリギリタイプかどうか
+    sleepPattern?: 'early' | 'normal' | 'late'  // 睡眠パターン
+  }
+
+  // === 感情パターン ===
+  emotionalPatterns: Array<{
+    trigger: string           // バイトのミス、テスト前など
+    reaction: string          // 落ち込む、焦るなど
+    effectiveResponse: string // 軽く励ますと回復、具体策を示すと安心など
+  }>
+
+  // === 直近コンテキスト（最大5件） ===
+  recentContext: Array<{
+    date: Date
+    summary: string           // マーケのレポートに追われてた、バイトで疲れたなど
+    mood: 'good' | 'neutral' | 'low'  // その時の気分
+  }>
+
+  // === 既存フィールド（後方互換） ===
+  interests_legacy?: string[]
+  experiences?: string[]
+  personality?: string[]
+  challenges?: string[]
+  goals?: string[]
+  context?: string[]
+
+  updatedAt: Date
+}
+
+/**
+ * 構造化ナレッジの抽出結果（AI応答からの抽出用）
+ */
+export interface ExtractedStructuredKnowledge {
+  basicInfo?: Partial<StructuredUserKnowledge['basicInfo']>
+  interests?: Array<{
+    topic: string
+    motivation?: string
+    depth?: 'mention' | 'repeated' | 'passionate'
+  }>
+  deepMotivations?: Array<{
+    desire: string
+    derivedFrom: string
+    confidence?: 'low' | 'medium' | 'high'
+  }>
+  lifestyle?: Partial<StructuredUserKnowledge['lifestyle']>
+  emotionalPatterns?: Array<{
+    trigger: string
+    reaction: string
+    effectiveResponse?: string
+  }>
+  recentContext?: {
+    summary: string
+    mood: 'good' | 'neutral' | 'low'
+  }
 }
