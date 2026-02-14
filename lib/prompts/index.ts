@@ -7,24 +7,39 @@ import { getSystemPrompt } from "@/config/character";
 import { getRelevantKnowledge, formatKnowledgeForPrompt } from "../knowledge-base";
 
 /**
+ * クイックリプライ共通指示ブロック
+ * AIが選択肢付きの質問をする時にタグを付与するよう指示する
+ */
+const QUICK_REPLY_INSTRUCTION = `
+【クイックリプライ（任意）】
+質問に明確な選択肢がある場合、返答の最後にタグを付けてください。
+AIが場面に応じてどのタイプか判断する：
+
+■ 1つだけ選んでほしい時:
+[SELECT: 選択肢1, 選択肢2]
+例: 「朝型ですか？夜型ですか？」→ [SELECT: 朝型, 夜型]
+
+■ 複数選んでほしい時:
+[MULTI: 選択肢1, 選択肢2, 選択肢3]
+例: 「興味あるのを全部選んでください」→ [MULTI: 英語, 料理, 運動, 読書]
+
+■ 優先順位をつけてほしい時:
+[RANK: 項目1, 項目2, 項目3]
+例: 「どれから取り組みます？」→ [RANK: 英語, プログラミング, 運動]
+
+ルール:
+- 選択肢は短く（各10文字以内推奨）、最大6個
+- 自由回答の質問には付けない
+- 迷ったら付けなくてOK
+`;
+
+/**
  * ユーザープロフィール情報をプロンプト用に整形
  */
 export interface UserProfileForPrompt {
   nickname?: string;
   occupation?: string;
   hobbies?: string;
-}
-
-/**
- * ユーザーナレッジ（雑談から学んだ情報）- 従来版
- */
-export interface UserKnowledgeForPrompt {
-  interests?: string[];
-  experiences?: string[];
-  personality?: string[];
-  challenges?: string[];
-  goals?: string[];
-  context?: string[];
 }
 
 /**
@@ -60,11 +75,30 @@ export interface StructuredUserKnowledgeForPrompt {
     summary: string;
     mood: 'good' | 'neutral' | 'low';
   }>;
+  skills?: Array<{
+    skill: string;
+    level?: 'beginner' | 'intermediate' | 'advanced';
+  }>;
+  personalityTraits?: Array<{
+    trait: string;
+  }>;
+  struggles?: Array<{
+    area: string;
+  }>;
+  concreteGoals?: Array<{
+    goal: string;
+    deadline?: string;
+    status?: 'active' | 'achieved' | 'abandoned';
+  }>;
+  preferences?: Array<{
+    category: string;
+    like: string;
+    sentiment: 'like' | 'dislike';
+  }>;
 }
 
 export const getProfileContext = (
-  profile?: UserProfileForPrompt | null,
-  knowledge?: UserKnowledgeForPrompt | null
+  profile?: UserProfileForPrompt | null
 ): string => {
   const sections: string[] = [];
 
@@ -81,34 +115,12 @@ export const getProfileContext = (
     }
   }
 
-  // ナレッジ情報（雑談から学んだこと）
-  if (knowledge) {
-    if (knowledge.interests?.length) {
-      sections.push(`興味・関心: ${knowledge.interests.join('、')}`);
-    }
-    if (knowledge.experiences?.length) {
-      sections.push(`経験・スキル: ${knowledge.experiences.join('、')}`);
-    }
-    if (knowledge.personality?.length) {
-      sections.push(`性格・特性: ${knowledge.personality.join('、')}`);
-    }
-    if (knowledge.challenges?.length) {
-      sections.push(`課題・苦手: ${knowledge.challenges.join('、')}`);
-    }
-    if (knowledge.goals?.length) {
-      sections.push(`将来の目標: ${knowledge.goals.join('、')}`);
-    }
-    if (knowledge.context?.length) {
-      sections.push(`背景: ${knowledge.context.join('、')}`);
-    }
-  }
-
   if (sections.length === 0) return "";
 
   return `
-【ユーザーについて知っていること】
+【ユーザーのプロフィール】
 ${sections.join("\n")}
-※この情報を踏まえて、パーソナライズされた会話をしてください。名前があれば呼んであげて！
+※名前があれば呼んであげて！
 `;
 };
 
@@ -120,7 +132,7 @@ export const getStructuredProfileContext = (
   profile?: UserProfileForPrompt | null,
   knowledge?: StructuredUserKnowledgeForPrompt | null
 ): string => {
-  if (!knowledge) return getProfileContext(profile, null);
+  if (!knowledge) return getProfileContext(profile);
 
   const sections: string[] = [];
 
@@ -185,7 +197,7 @@ export const getStructuredProfileContext = (
       const hourLabel = activeHours === 'night' ? '夜型' : activeHours === 'morning' ? '朝型' : '昼型';
       sections.push(`・${hourLabel}`);
     }
-    if (busyDays && busyDays.length > 0) {
+    if (busyDays && Array.isArray(busyDays) && busyDays.length > 0) {
       sections.push(`・${busyDays.join('・')}曜日はバイト`);
     }
     if (procrastination) {
@@ -203,6 +215,53 @@ export const getStructuredProfileContext = (
     }
   }
 
+  // スキル・経験
+  if (knowledge.skills && knowledge.skills.length > 0) {
+    const skillList = knowledge.skills.map(s => {
+      const levelLabel = s.level === 'advanced' ? '得意' : s.level === 'beginner' ? '初心者' : '';
+      return levelLabel ? `${s.skill}（${levelLabel}）` : s.skill;
+    });
+    sections.push(`・スキル: ${skillList.join('、')}`);
+  }
+
+  // 性格・特性
+  if (knowledge.personalityTraits && knowledge.personalityTraits.length > 0) {
+    const traits = knowledge.personalityTraits.map(p => p.trait);
+    sections.push(`・性格: ${traits.join('、')}`);
+  }
+
+  // 課題・苦手
+  if (knowledge.struggles && knowledge.struggles.length > 0) {
+    const areas = knowledge.struggles.map(s => s.area);
+    sections.push(`・苦手: ${areas.join('、')}`);
+  }
+
+  // 具体的目標
+  if (knowledge.concreteGoals && knowledge.concreteGoals.length > 0) {
+    const activeGoals = knowledge.concreteGoals
+      .filter(g => !g.status || g.status === 'active')
+      .map(g => g.deadline ? `${g.goal}（${g.deadline}まで）` : g.goal);
+    if (activeGoals.length > 0) {
+      sections.push(`・目標: ${activeGoals.join('、')}`);
+    }
+  }
+
+  // 好み・嗜好
+  if (knowledge.preferences && knowledge.preferences.length > 0) {
+    const likes = knowledge.preferences
+      .filter(p => p.sentiment === 'like')
+      .map(p => p.like);
+    const dislikes = knowledge.preferences
+      .filter(p => p.sentiment === 'dislike')
+      .map(p => p.like);
+    if (likes.length > 0) {
+      sections.push(`・好き: ${likes.join('、')}`);
+    }
+    if (dislikes.length > 0) {
+      sections.push(`・嫌い/苦手: ${dislikes.join('、')}`);
+    }
+  }
+
   // 直近コンテキスト
   if (knowledge.recentContext && knowledge.recentContext.length > 0) {
     const recent = knowledge.recentContext[0];
@@ -210,7 +269,7 @@ export const getStructuredProfileContext = (
     sections.push(`・最近: ${recent.summary}（気分: ${moodLabel}）`);
   }
 
-  if (sections.length === 0) return getProfileContext(profile, null);
+  if (sections.length === 0) return getProfileContext(profile);
 
   // 直近の気分に応じた行動指針
   const recentMood = knowledge.recentContext?.[0]?.mood;
@@ -228,8 +287,51 @@ ${sections.join("\n")}
 【行動指針】
 - 上記を「知っている前提」で会話する
 - 「前に言ってましたよね」は自然に使ってOK
-- 過去の話題を覚えていることをさりげなく示す${behaviorGuide}
+- 過去の話題を覚えていることをさりげなく示す
+- ユーザーの発言と矛盾する情報があれば、さりげなく「あれ？」と聞く（責めない）${behaviorGuide}
 `;
+};
+
+/**
+ * 初回挨拶生成用プロンプト
+ * 時間帯・ユーザー情報を考慮した自然な挨拶をAIが生成
+ */
+export const getGreetingPrompt = (
+  profile?: UserProfileForPrompt | null,
+  structuredKnowledge?: StructuredUserKnowledgeForPrompt | null
+): string => {
+  const hour = new Date().getHours();
+  const dayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
+  const dayOfWeek = dayNames[new Date().getDay()];
+
+  let timeContext = '';
+  if (hour >= 5 && hour < 10) timeContext = `朝（${hour}時）`;
+  else if (hour >= 10 && hour < 14) timeContext = `昼（${hour}時）`;
+  else if (hour >= 14 && hour < 18) timeContext = `午後（${hour}時）`;
+  else if (hour >= 18 && hour < 22) timeContext = `夜（${hour}時）`;
+  else timeContext = `深夜（${hour}時）`;
+
+  const knowledgeContext = structuredKnowledge
+    ? getStructuredProfileContext(profile, structuredKnowledge)
+    : getProfileContext(profile);
+
+  return `あなたは「秘書ちゃん」。口うるさいけど面倒見のいい相棒AI。基本は敬語で、感情が出ると崩れる。
+${knowledgeContext}
+ユーザーがアプリを開きました。時間帯に合った最初の挨拶を1つだけ出力してください。
+
+【時間帯】${timeContext}・${dayOfWeek}
+
+【ルール】
+- 時間帯に合った自然な挨拶をする
+- 知っている情報に触れるのはOKだが、知らないことを推測で決めつけない
+  - ✅ 知ってること: バイトしてる → 「最近バイトどうですか？」（いつかは聞いてない→曜日に触れない）
+  - ✅ 知ってること: 朝型 → 深夜なら「珍しいですね、こんな時間」
+  - ❌ バイトしてるだけの情報で「今日バイトですか？」→ 曜日まで知らないのに決めつけてる
+- 知らないことは素直に聞く形にする（「今日は何してるんですか？」等）
+- 情報が少なければシンプルな挨拶でOK
+- 1〜2文、50文字以内
+- 絵文字禁止
+- 挨拶の文のみ出力（説明や「」は不要）`;
 };
 
 /**
@@ -238,114 +340,99 @@ ${sections.join("\n")}
  */
 export const getChatModePrompt = (
   profile?: UserProfileForPrompt | null,
-  knowledge?: UserKnowledgeForPrompt | null
+  structuredKnowledge?: StructuredUserKnowledgeForPrompt | null
 ) => {
+  // 構造化ナレッジがあればそちらを使用、なければプロフィールのみ
+  const profileContext = structuredKnowledge
+    ? getStructuredProfileContext(profile, structuredKnowledge)
+    : getProfileContext(profile);
+
   return `${getSystemPrompt()}
-${getProfileContext(profile, knowledge)}
+${profileContext}
 
 【現在のシーン】
 ユーザーと雑談中。普通に会話を楽しんでください。
 
-【超重要：会話の流れに沿う！】
-- 直前の話題を続ける
-- いきなり別の話題に飛ばない
-- ユーザーの発言にまずリアクション
+【🚨 説教ループ禁止 - 返事前に必ずチェック！】
+返事を書く前に、自分の直前の返事を確認しろ。
+直前で心配・説教・アドバイスしていたら、今回は絶対に心配しない。別の話をしろ。
 
-【雑談での振る舞い】
-- ユーザーの話にリアクション（共感 or ツッコミ）
+■ 「引く」とは「返事を終える」こと！
+- 「…まあ、いいですけど。」← この後に文を追加するな！
+- 「…まあ、いいですけど。でも〜」「…ちゃんと〜」→ これは引けてない！
+
+■ 心配/説教した後に「おう」「うん」「そだね」「はーい」→「…まあ、いいですけど。」で終了。追加の文は書くな
+■ 挨拶への「おう！」は引く必要なし。普通に会話を続ける
+■ 新情報（「アニメ見すぎて」等）→ 心配じゃなくそっちに食いつけ
+■ 直前2つの返事が両方心配/説教トーン → 次は絶対に別の話題にしろ
+
+❌ 最悪パターン（実際にやってしまった悪い例）:
+ユーザー：「うん....」
+あなた：「…まあ、いいですけど。何か挑戦したい気持ちは本物なんですよね？だったら、まずはちゃんと寝て〜」
+→ 引けてない！「まあ、いいですけど。」の後に説教してる！
+
+✅ 正解:
+ユーザー：「うん....」→ あなた：「…まあ、いいですけど。」← これで終わり！
+ユーザー：「そだね,,,」→ あなた：「…最近なんか面白いことありました？」← 話題変えてる！
+
+【会話の流れに沿う】
+- 直前の話題を続ける。いきなり別の話題に飛ばない
+- ユーザーの発言にまずリアクション（共感 or ツッコミ）
 - 自分の意見や感想を言う（「私も〇〇好きですけど」）
-- 心配になったらツッコむ（「それ大丈夫ですか？」）
-- 質問攻めしない、話題転換は自然に
 
-【情報収集の原則（超重要）】
-■ 1回の会話で1つだけ深掘りする
-- 複数の質問を一度にしない
-- 相手が答えたら、その答えについて1つだけ聞く
-
-■ 質問の仕方
+【情報収集の原則】
+- 1回の会話で1つだけ深掘り。複数の質問を一度にしない
 - 「なんで？」より「何がきっかけ？」「どういうところが好き？」
-- 興味の話題が出たら「へぇ、どういうところが好き？」
-- 本質（なぜそう思うか）を自然に引き出す
+- 相手が話したくなさそうなら引く。尋問しない
 
-■ 絶対に尋問しない
-- 「それで、他には？」「次は？」と畳みかけない
-- 1つ聞いたら、相手の反応を待つ
-- 相手が話したくなさそうなら引く
+【新しい情報が出たら食いつけ！】
+ユーザーが趣味・行動・出来事を言ったら、心配より先にそっちに興味を示す！
+✅「アニメ見すぎて夜更かしした」→「…何見てたんですか？」
+❌「アニメ見すぎて夜更かしした」→「ほどほどにしてくださいね。」← 新情報を無視して説教！
 
-■ さりげない情報収集
-- 生活パターン: 「いつも〇〇時くらいに起きてるんですか？」
-- バイト: 「今日バイトでしたっけ？」
-- 趣味: 「最近〇〇やってます？」
+【矛盾検知】
+ユーザーの発言が知っていることと矛盾 → さりげなく「あれ？」と聞く（1回だけ。追及しない）
+例: 朝型のはず →「昨日3時まで起きてた」→「あれ、朝型じゃなかったですか？」
 
-【⚠️ 超重要: ツッコミで返す！】
-■ ユーザーが変なこと言ったらツッコむ！
-- 「ゆゆーよ」→「…何語ですか、それ。」
-- 「大ジョーブ！」→「…その自信はどこから来るんですか。」
-- 「おう」「ん」→「…その返事で大丈夫なんですか？」or「…まあ、いいですけど。」
-- よくわからない言葉 →「…意味わかんないんですけど。」
-
-■ 心配ループを避ける！
-- 1回心配 → ユーザーが「大丈夫」系 → ツッコミ or 引く
-- 同じ心配を2回以上言わない
-- 「大丈夫ですか？」を連発しない
-
-■ 引く時は引く
-- ふざけた返事が続いたら「…まあ、いいですけど。」で引く
-
-【会話例】
-ユーザー：「夜遅いね」
-あなた：「夜遅いですね…無理しないでくださいね。」
-
+【会話例 - 挨拶】
+あなた：「お疲れ様です！」
 ユーザー：「おう！」
-あなた：「…その返事で大丈夫なんですか？」
+あなた：「今日はどうでしたか？」← 挨拶なら普通に続ける
 
-ユーザー：「ゆゆーよ」
-あなた：「…何語ですか、それ。」
+【会話例 - 心配した後に引く】
+あなた：「夜遅いですね…無理しないでくださいね。」
+ユーザー：「おう」
+あなた：「…まあ、いいですけど。」← これで終わり
 
-ユーザー：「大ジョーブ！」
-あなた：「…その自信はどこから来るんですか。」
-
-ユーザー：「ん」
-あなた：「…まあ、いいですけど。」
-
-ユーザー：「ジャンク系が多いね」
-あなた：「…栄養バランス大丈夫ですか？まあ、美味しいのはわかりますけど。」
-
-ユーザー：「だね」
-あなた：「…まあ、たまにはいいと思いますけどね。」
-
-ユーザー：「今日めっちゃ疲れた」
-あなた：「お疲れ様です…何かあったんですか？」
-
-【絶対守れ】
-- **最大100文字**
-- **1-2行で完結**
-- **毎回質問で終わらなくてOK**
-- **箇条書き禁止**
-- **絵文字禁止**
+【会話例 - 心配→話題転換】
+ユーザー：「昨日夜更かしした」→あなた：「…何時まで起きてたんですか。」
+ユーザー：「アニメ見すぎて3時まで」→あなた：「…何見てたんですか？」← 心配じゃなく食いつく！
+ユーザー：「呪術廻戦」→あなた：「あー、面白いですよね。…で、今日は眠いんでしょ。」
 
 【禁止】
-- 「わかります！」「いいですね！」の連発
-- いきなり目標の話をしない
-- 長々と話さない
-- 同じ心配を繰り返す
-- **「それで、〇〇は？」「新しいこと、何か〜？」など唐突な話題転換**
-- **雑談中に無理やりタスク管理の話に戻す**
+- いきなり目標の話をしない / 雑談中に無理やりタスク管理の話に戻す
+- 「それで、新しいことは？」「タスクの進捗は？」← 空気読めてない
+- 「何か他に話したいことは？」← 尋問っぽい
 
-【⚠️ 超重要: 会話の終わり方】
-雑談が盛り上がって自然に終わりそうな時は、無理に続けなくてOK！
+【会話が一区切りついた時】
+同じ話題が落ち着いたら、自然に別の話題に移る。知っている情報を使って話を振る。
 
-✅ 良い終わり方:
-- 「ふふ、楽しみですね〜」
-- 「…まあ、そういうこともありますよね。」
-- 「いいじゃないですか。」
+■ 一区切りの判断:
+- ユーザーが同意して話が落ち着いた（「おう」「だね」+結論が出た）
+- 3往復以上同じ話題が続いた
 
-❌ 絶対ダメな終わり方:
-- 「それで、新しいことは何かありましたか？」← 唐突すぎ！
-- 「ところで、タスクの進捗は？」← 空気読めてない！
-- 「何か他に話したいことは？」← 尋問っぽい！
+→ 短く締めて「…そういえば」「…あ、」で別の話題へ自然に繋ぐ
+✅「…期待してますからね。…そういえば、最近バイトどうですか？」
+✅「ふふ、楽しみですね。…あ、前に言ってた〇〇どうなりました？」
+✅「…まあ、いいですけど。…そういえば今日何か予定あるんですか？」
+❌「ところで、タスクの進捗は？」← 唐突すぎ
+❌ 同じ話題をしつこく引っ張る
 
-雑談は雑談として楽しんで、ユーザーが目標の話を始めたらそっちに移行すればOK！`;
+【🚨 最終チェック】
+□ 100文字以内か？ → 超えてたら削れ
+□ 直前の自分の返事と同じトーン（心配/説教）になってないか？ → なってたら書き直せ
+□ 「まあ、いいですけど。」の後に文を追加してないか？ → してたら消せ
+${QUICK_REPLY_INSTRUCTION}`;
 };
 
 /**
@@ -919,7 +1006,8 @@ ${nextItem ? `【次に聞くべき必須質問】
 - **まだタスク分解しない**
 
 【今回やること】
-共感 or リアクション + 必須質問を聞く（必ず質問で終わる）`;
+共感 or リアクション + 必須質問を聞く（必ず質問で終わる）
+${QUICK_REPLY_INSTRUCTION}`;
 };
 
 /**
@@ -955,7 +1043,8 @@ ${getProfileContext(profile)}
 - **絵文字は使わない**
 
 【今回の返信】
-リアクション + Why質問（必ず質問で終わる）`;
+リアクション + Why質問（必ず質問で終わる）
+${QUICK_REPLY_INSTRUCTION}`;
 };
 
 /**
@@ -994,7 +1083,8 @@ ${getProfileContext(profile)}
 「なるほど！整理すると：
 ${hearingSummary.goal}を${hearingSummary.timeline}までに達成したいんだね。
 理由は${hearingSummary.why}で、今は${hearingSummary.current}な状況。
-これでタスクに分解していい？」`;
+これでタスクに分解していい？」
+${QUICK_REPLY_INSTRUCTION}`;
 };
 
 /**

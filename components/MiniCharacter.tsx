@@ -3,6 +3,7 @@
 import { Box } from "@chakra-ui/react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MiniCharacterChat } from "./MiniCharacterChat";
+import { ChecklistItem } from "@/types/task-tree";
 
 const STORAGE_KEY = "miniCharacterPosition";
 const LONG_PRESS_DURATION = 500; // 長押し判定時間（ms）
@@ -14,11 +15,15 @@ interface MiniCharacterProps {
   onChatOpenChange?: (isOpen: boolean) => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
-  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => string | void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
+  onUpdateChecklist?: (nodeId: string, checklist: ChecklistItem[]) => void;
+  focusNode?: any;
+  onFocusNodeHandled?: () => void;
+  chatOpenRef?: React.MutableRefObject<(() => void) | null>;
 }
 
-export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode, onUpdateMemo }: MiniCharacterProps) {
+export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, focusNode, onFocusNodeHandled, chatOpenRef }: MiniCharacterProps) {
   const [position, setPosition] = useState({ x: 30, y: 150 });
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -50,6 +55,18 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode
     setIsChatOpen(false);
     onChatOpenChange?.(false);
   }, [onChatOpenChange]);
+
+  // chatOpenRef で親からチャットを開けるようにする
+  useEffect(() => {
+    if (chatOpenRef) {
+      chatOpenRef.current = handleChatOpen;
+    }
+    return () => {
+      if (chatOpenRef) {
+        chatOpenRef.current = null;
+      }
+    };
+  }, [chatOpenRef, handleChatOpen]);
 
   // 画面サイズに基づいて移動範囲を計算
   const getSafeBounds = () => {
@@ -431,6 +448,9 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode
         onAddTask={onAddTask}
         onAddNode={onAddNode}
         onUpdateMemo={onUpdateMemo}
+        onUpdateChecklist={onUpdateChecklist}
+        focusNode={focusNode}
+        onFocusNodeHandled={onFocusNodeHandled}
       />
     </>
   );

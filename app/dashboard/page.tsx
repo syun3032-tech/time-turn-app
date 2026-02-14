@@ -9,11 +9,11 @@ import { Dialog } from "@chakra-ui/react";
 import { chatWithAISeamless, AIProvider } from "@/lib/ai-service";
 import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree, generateNodeId } from "@/lib/task-tree-storage";
 import { TaskNode } from "@/types/task-tree";
-import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, getStructuredProfileContext, type UserKnowledgeForPrompt, type StructuredUserKnowledgeForPrompt } from "@/lib/prompts";
+import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, getGreetingPrompt, type StructuredUserKnowledgeForPrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getUserKnowledge, updateUserKnowledge, getStructuredKnowledge, updateStructuredKnowledge, migrateToStructuredKnowledge, type UsageData } from "@/lib/firebase/firestore";
-import { extractKnowledgeFromConversation, shouldExtractKnowledge, extractStructuredKnowledge, shouldExtractStructuredKnowledge } from "@/lib/knowledge-extractor";
-import type { UserKnowledge, StructuredUserKnowledge } from "@/lib/firebase/firestore-types";
+import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getStructuredKnowledge, updateStructuredKnowledge, migrateToStructuredKnowledge, type UsageData } from "@/lib/firebase/firestore";
+import { extractStructuredKnowledge, shouldExtractStructuredKnowledge } from "@/lib/knowledge-extractor";
+import type { StructuredUserKnowledge } from "@/lib/firebase/firestore-types";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
@@ -25,10 +25,13 @@ import { NotificationPermission } from "@/components/NotificationPermission";
 import { FiSettings, FiMenu, FiSend, FiX } from "react-icons/fi";
 import type { UserProfile, Conversation } from "@/lib/firebase/firestore-types";
 import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
+import { parseQuickReplies, type QuickReply } from "@/lib/parse-quick-replies";
+import { QuickReplyButtons } from "@/components/QuickReplyButtons";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  quickReply?: QuickReply;
 }
 
 // ヒアリング進捗を追跡する型
@@ -110,12 +113,21 @@ export default function DashboardPage() {
   const [pendingTaskNodes, setPendingTaskNodes] = useState<TaskNode[]>([]);
   const [confirmSummary, setConfirmSummary] = useState("");
 
-  // ユーザーナレッジ（雑談から学んだ情報）
-  const [userKnowledge, setUserKnowledge] = useState<UserKnowledge | null>(null);
+  // クイックリプライ
+  const [activeQuickReply, setActiveQuickReply] = useState<QuickReply | null>(null);
+
   // 構造化ユーザーナレッジ
   const [structuredKnowledge, setStructuredKnowledge] = useState<StructuredUserKnowledge | null>(null);
-  const [lastExtractionCount, setLastExtractionCount] = useState(0);
-  const [lastStructuredExtractionCount, setLastStructuredExtractionCount] = useState(0);
+  const [lastStructuredExtractionCount, setLastStructuredExtractionCount] = useState(() => {
+    if (typeof window === 'undefined') return 0;
+    const saved = localStorage.getItem('lastStructuredExtractionCount');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // 抽出カウントをlocalStorageに永続化
+  useEffect(() => {
+    localStorage.setItem('lastStructuredExtractionCount', String(lastStructuredExtractionCount));
+  }, [lastStructuredExtractionCount]);
 
   // ヒアリング進捗率を計算
   const hearingPercentage = Math.round(
@@ -181,21 +193,16 @@ export default function DashboardPage() {
     loadTaskTree();
   }, [user]);
 
-  // ユーザーナレッジを読み込み（従来版と構造化版両方）
+  // 構造化ユーザーナレッジを読み込み
   useEffect(() => {
     if (!user) return;
 
     const loadKnowledge = async () => {
       try {
-        // 従来版
-        const knowledge = await getUserKnowledge(user.uid);
-        setUserKnowledge(knowledge);
-
-        // 構造化版
         let structured = await getStructuredKnowledge(user.uid);
 
-        // 構造化版がなければマイグレーション
-        if (!structured && knowledge) {
+        // 構造化版がなければ旧版からマイグレーション試行
+        if (!structured) {
           await migrateToStructuredKnowledge(user.uid);
           structured = await getStructuredKnowledge(user.uid);
         }
@@ -253,128 +260,69 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, conversations.length]); // conversationsが読み込まれた後に実行
 
-  // 初回挨拶を生成（会話がない時に表示）- 雑談っぽく！
+  // 初回挨拶をAI生成（フォールバックあり）
   useEffect(() => {
-    // 条件: プロフィール読み込み済み、会話なし、初回挨拶まだ、会話IDなし
     if (profileLoading || hasShownInitialGreeting || currentConversationId) return;
     if (messages.length > 0) return;
 
-    const generateCasualGreeting = () => {
-      const hour = new Date().getHours();
-      const nickname = userProfile?.nickname;
-      const name = nickname ? `${nickname}さん` : "";
-      const dayOfWeek = new Date().getDay(); // 0=日曜, 6=土曜
+    const generateGreeting = async () => {
+      setHasShownInitialGreeting(true);
+      setIsLoading(true);
 
-      // 早朝 (5-7時)
-      if (hour >= 5 && hour < 7) {
-        const patterns = [
-          `おはようございます${name ? `、${name}` : ""}！早起きですね〜。`,
-          `${name ? `${name}、` : ""}おはようございます！朝早いですね、えらい！`,
-          `おはよう...ございます...。${name ? `${name}も` : ""}早起きなんですね。`,
-          `ふあぁ...おはようございます${name ? `、${name}` : ""}。朝は眠いですよね...。`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
+      try {
+        // 構造化ナレッジをプロンプト用に変換
+        const knowledgeForPrompt: StructuredUserKnowledgeForPrompt | null = structuredKnowledge ? {
+          basicInfo: structuredKnowledge.basicInfo,
+          interests: structuredKnowledge.interests.map(i => ({
+            topic: i.topic, motivation: i.motivation, depth: i.depth,
+          })),
+          deepMotivations: structuredKnowledge.deepMotivations.map(m => ({
+            desire: m.desire, confidence: m.confidence,
+          })),
+          lifestyle: structuredKnowledge.lifestyle,
+          emotionalPatterns: structuredKnowledge.emotionalPatterns,
+          recentContext: structuredKnowledge.recentContext.map(c => ({
+            summary: c.summary, mood: c.mood,
+          })),
+          skills: structuredKnowledge.skills,
+          personalityTraits: structuredKnowledge.personalityTraits?.map(p => ({ trait: p.trait })),
+          struggles: structuredKnowledge.struggles?.map(s => ({ area: s.area })),
+          concreteGoals: structuredKnowledge.concreteGoals,
+          preferences: structuredKnowledge.preferences,
+        } : null;
+
+        const greetingPrompt = getGreetingPrompt(userProfile, knowledgeForPrompt);
+        const response = await chatWithAISeamless([
+          { role: "user", content: greetingPrompt }
+        ], provider);
+
+        if (response.success && response.content) {
+          const greeting = response.content.replace(/^[「」『』""]/g, '').replace(/[「」『』"""]/g, '').trim();
+          setCharacterMessage(greeting);
+          setMessages([{ role: "assistant", content: greeting }]);
+        } else {
+          throw new Error("AI greeting failed");
+        }
+      } catch (error) {
+        console.error("Failed to generate AI greeting:", error);
+        const hour = new Date().getHours();
+        const nickname = userProfile?.nickname;
+        const name = nickname ? `${nickname}さん、` : '';
+        let fallback: string;
+        if (hour >= 5 && hour < 12) fallback = `${name}おはようございます！`;
+        else if (hour >= 12 && hour < 18) fallback = `${name}お疲れ様です！`;
+        else fallback = `${name}こんばんは！`;
+        setCharacterMessage(fallback);
+        setMessages([{ role: "assistant", content: fallback }]);
+      } finally {
+        setIsLoading(false);
       }
-
-      // 朝 (7-10時)
-      if (hour >= 7 && hour < 10) {
-        const patterns = [
-          `おはようございます${name ? `、${name}` : ""}！朝ごはん食べましたか？`,
-          `${name ? `${name}、` : ""}おはようございます！よく眠れましたか？`,
-          `おはようございます！${name ? `${name}、` : ""}今日もいい天気...かな？`,
-          `おはよう...ございます！${name ? `${name}は` : ""}朝型ですか？`,
-          `おはようございます${name ? `、${name}` : ""}！今日も一日、頑張りましょうね。`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 午前中 (10-12時)
-      if (hour >= 10 && hour < 12) {
-        const patterns = [
-          `${name ? `${name}、` : ""}こんにちは！午前中、調子どうですか？`,
-          `こんにちは${name ? `、${name}` : ""}！もうすぐお昼ですね〜。`,
-          `${name ? `${name}、` : ""}おはよう...じゃなくて、こんにちはですね！`,
-          `こんにちは！${name ? `${name}、` : ""}お腹空いてきませんか？`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // お昼 (12-14時)
-      if (hour >= 12 && hour < 14) {
-        const patterns = [
-          `こんにちは${name ? `、${name}` : ""}！お昼ごはん食べましたか？`,
-          `${name ? `${name}、` : ""}こんにちは！お昼休み中ですか？`,
-          `こんにちは！${name ? `${name}は` : ""}お昼何食べました？...気になります！`,
-          `お昼ですね〜。${name ? `${name}、` : ""}ちゃんとご飯食べてくださいね！`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 午後 (14-17時)
-      if (hour >= 14 && hour < 17) {
-        const patterns = [
-          `こんにちは${name ? `、${name}` : ""}！午後も頑張ってますか？`,
-          `${name ? `${name}、` : ""}こんにちは！眠くなる時間ですよね...。`,
-          `こんにちは！${name ? `${name}、` : ""}おやつ食べました？`,
-          `${name ? `${name}、` : ""}お疲れ様です！午後はどうですか？`,
-          dayOfWeek === 5 ? `${name ? `${name}、` : ""}金曜日ですね！もうひと踏ん張り！` : `こんにちは${name ? `、${name}` : ""}！`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 夕方 (17-19時)
-      if (hour >= 17 && hour < 19) {
-        const patterns = [
-          `${name ? `${name}、` : ""}お疲れ様です！今日はどんな一日でしたか？`,
-          `こんばんは${name ? `、${name}` : ""}！晩ごはん何にします？`,
-          `${name ? `${name}、` : ""}お疲れ様です！もう夕方ですね〜。`,
-          `お疲れ様です！${name ? `${name}、` : ""}今日も頑張りましたね。`,
-          dayOfWeek === 5 ? `${name ? `${name}、` : ""}やっと金曜の夜ですね！お疲れ様でした！` : `${name ? `${name}、` : ""}お疲れ様です！`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 夜 (19-22時)
-      if (hour >= 19 && hour < 22) {
-        const patterns = [
-          `こんばんは${name ? `、${name}` : ""}！晩ごはん食べましたか？`,
-          `${name ? `${name}、` : ""}こんばんは！今日も一日お疲れ様でした。`,
-          `こんばんは！${name ? `${name}、` : ""}夜はゆっくりできてますか？`,
-          `${name ? `${name}、` : ""}こんばんは！今日あったこと、聞かせてください！`,
-          `こんばんは${name ? `、${name}` : ""}！夜ご飯、美味しかったですか？`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 深夜 (22-24時)
-      if (hour >= 22 && hour < 24) {
-        const patterns = [
-          `${name ? `${name}、` : ""}まだ起きてるんですね！夜更かしですか？`,
-          `こんばんは${name ? `、${name}` : ""}...って、もうこんな時間！`,
-          `${name ? `${name}、` : ""}お疲れ様です。そろそろ休む時間ですよ〜。`,
-          `夜遅いですね...${name ? `${name}、` : ""}無理しないでくださいね。`,
-          `${name ? `${name}、` : ""}こんな時間まで...お疲れ様です！`,
-        ];
-        return patterns[Math.floor(Math.random() * patterns.length)];
-      }
-
-      // 深夜〜早朝 (0-5時)
-      const patterns = [
-        `えっ...${name ? `${name}、` : ""}こんな時間に！？大丈夫ですか？`,
-        `${name ? `${name}...` : ""}夜更かしさんですね...。体調気をつけてくださいね。`,
-        `わ、びっくり！${name ? `${name}、` : ""}まだ起きてたんですか？`,
-        `${name ? `${name}、` : ""}眠れないんですか...？`,
-        `深夜ですね...${name ? `${name}も` : ""}夜型なんですか？`,
-      ];
-      return patterns[Math.floor(Math.random() * patterns.length)];
     };
 
-    const greeting = generateCasualGreeting();
-    setCharacterMessage(greeting);
-    // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
-    setMessages([{ role: "assistant", content: greeting }]);
-    setHasShownInitialGreeting(true);
+    generateGreeting();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileLoading, userProfile, messages.length, hasShownInitialGreeting, currentConversationId]);
+
 
   // 利用制限状況を読み込み + ログイン連続日数を更新
   useEffect(() => {
@@ -506,11 +454,14 @@ export default function DashboardPage() {
       setCharacterMessage(greeting);
       // 挨拶を会話履歴に追加（AIが文脈を理解できるように）
       setMessages([{ role: "assistant", content: greeting }]);
+      // Firestoreにも挨拶を保存（リロード後も文脈が残るように）
+      await addMessageToConversation(newConvId, 'assistant', greeting);
 
       setTaskBreakdownStage("normal");
       setGoalContext("");
       setHearingProgress({ why: false, current: false, target: false, timeline: false });
       setHearingSummary({ goal: "", why: "", current: "", target: "", timeline: "" });
+      setActiveQuickReply(null);
 
       // 会話一覧を再読み込み
       const convs = await getConversations(user.uid);
@@ -526,6 +477,7 @@ export default function DashboardPage() {
 
     try {
       setCurrentConversationId(conversationId);
+      setActiveQuickReply(null);
 
       // メッセージを読み込み
       const msgs = await getConversationMessages(conversationId);
@@ -896,8 +848,11 @@ ${conversationText}`,
     return newProgress;
   };
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || isLoading || !user) return;
+  const handleSendMessage = async (overrideText?: string) => {
+    const textToSend = overrideText || message;
+    if (!textToSend.trim() || isLoading || !user) return;
+
+    setActiveQuickReply(null);
 
     // === 利用制限チェック ===
     if (isLimitReached) {
@@ -905,13 +860,13 @@ ${conversationText}`,
         role: "assistant",
         content: getLimitReachedMessage()
       };
-      setMessages([...messages, { role: "user", content: message }, limitMessage]);
+      setMessages([...messages, { role: "user", content: textToSend }, limitMessage]);
       setCharacterMessage(getLimitReachedMessage());
       setMessage("");
       return;
     }
 
-    const userMessage: Message = { role: "user", content: message };
+    const userMessage: Message = { role: "user", content: textToSend };
     const newMessages = [...messages, userMessage];
 
     setMessages(newMessages);
@@ -932,10 +887,14 @@ ${conversationText}`,
     // Firestoreにユーザーメッセージを保存
     try {
       if (convId) {
-        await addMessageToConversation(convId, 'user', message);
-        // 最初のメッセージなら仮タイトルを設定
-        if (messages.length === 0) {
-          await setTempTitle(message, convId);
+        // 初回挨拶がローカルにだけある場合、先にFirestoreに保存
+        if (messages.length === 1 && messages[0].role === 'assistant') {
+          await addMessageToConversation(convId, 'assistant', messages[0].content);
+        }
+        await addMessageToConversation(convId, 'user', textToSend);
+        // 最初のユーザーメッセージなら仮タイトルを設定（挨拶分を考慮）
+        if (messages.length <= 1) {
+          await setTempTitle(textToSend, convId);
         }
       }
     } catch (error) {
@@ -950,35 +909,23 @@ ${conversationText}`,
       // キーワード検出で hearing stage に移行
       // やる気・意欲を感じるキーワードを検出
       const motivationKeywords = [
-        // 〜したい系（意欲表現）
-        "やりたい", "したい", "なりたい", "行きたい", "始めたい", "作りたい",
+        // 〜したい系（意欲表現）- 具体的な目標を示すもの
+        "やりたい", "なりたい", "始めたい", "作りたい",
         "変わりたい", "挑戦したい", "頑張りたい", "成功したい", "達成したい",
         "勉強したい", "学びたい", "習得したい", "上達したい", "マスターしたい",
         "痩せたい", "稼ぎたい", "貯めたい", "増やしたい",
         "転職したい", "独立したい", "起業したい", "就職したい",
-        "合格したい", "受かりたい", "取りたい", "受けたい",
-        "克服したい", "治したい", "直したい", "改善したい", "やめたい", "辞めたい",
-        "出たい", "入りたい", "続けたい", "できるようになりたい",
-        // 〜する系（決意表現）
-        "やる", "決めた", "決意", "決心", "本気", "覚悟",
+        "合格したい", "受かりたい",
+        "克服したい", "改善したい",
+        "続けたい", "できるようになりたい",
+        // 〜する系（明確な決意表現）
+        "決めた", "決意", "決心", "覚悟",
         // 目標・計画系
-        "目標", "夢", "将来", "いつか", "そのうち",
-        // やる気表現
-        "モチベ", "やる気", "頑張る", "頑張ろう", "挑戦", "チャレンジ",
+        "目標にする", "目標は",
         // その他意欲
         "変えたい", "よくしたい", "うまくなりたい", "強くなりたい",
       ];
-      const hasTaskKeyword = motivationKeywords.some(keyword => message.includes(keyword));
-
-      // ナレッジをプロンプト用に変換（従来版）
-      const knowledgeForPrompt: UserKnowledgeForPrompt | null = userKnowledge ? {
-        interests: userKnowledge.interests,
-        experiences: userKnowledge.experiences,
-        personality: userKnowledge.personality,
-        challenges: userKnowledge.challenges,
-        goals: userKnowledge.goals,
-        context: userKnowledge.context,
-      } : null;
+      const hasTaskKeyword = motivationKeywords.some(keyword => textToSend.includes(keyword));
 
       // 構造化ナレッジをプロンプト用に変換
       const structuredKnowledgeForPrompt: StructuredUserKnowledgeForPrompt | null = structuredKnowledge ? {
@@ -998,37 +945,29 @@ ${conversationText}`,
           summary: c.summary,
           mood: c.mood,
         })),
+        skills: structuredKnowledge.skills,
+        personalityTraits: structuredKnowledge.personalityTraits?.map(p => ({ trait: p.trait })),
+        struggles: structuredKnowledge.struggles?.map(s => ({ area: s.area })),
+        concreteGoals: structuredKnowledge.concreteGoals,
+        preferences: structuredKnowledge.preferences,
       } : null;
-
-      // 構造化プロファイルコンテキストを生成
-      const profileContext = structuredKnowledgeForPrompt
-        ? getStructuredProfileContext(userProfile, structuredKnowledgeForPrompt)
-        : '';
 
       if (taskBreakdownStage === "normal" && hasTaskKeyword) {
         setTaskBreakdownStage("hearing");
-        setGoalContext(message);
-        setHearingSummary(prev => ({ ...prev, goal: message }));
+        setGoalContext(textToSend);
+        setHearingSummary(prev => ({ ...prev, goal: textToSend }));
 
         // 最初は興味を示す
         systemPrompt = getInterestStagePrompt(userProfile);
       } else if (taskBreakdownStage === "normal") {
-        // 目標キーワードがない場合は雑談モード
-        // 構造化プロファイルがあればそれを使用
-        systemPrompt = getChatModePrompt(userProfile, knowledgeForPrompt);
-        // 構造化プロファイルコンテキストを追加
-        if (profileContext) {
-          systemPrompt = systemPrompt.replace(
-            '【ユーザーについて知っていること】',
-            profileContext.trim()
-          );
-        }
+        // 目標キーワードがない場合は雑談モード（構造化ナレッジ使用）
+        systemPrompt = getChatModePrompt(userProfile, structuredKnowledgeForPrompt);
       }
       // === Stage 2: Hearing ===
       // ヒアリング中 - 進捗を更新して次の質問を促す
       else if (taskBreakdownStage === "hearing") {
         // ユーザーの返答からヒアリング情報を検出
-        const updatedProgress = detectAndUpdateHearing(message);
+        const updatedProgress = detectAndUpdateHearing(textToSend);
 
         // 進捗率を計算
         const progressCount = Object.values(updatedProgress).filter(Boolean).length;
@@ -1058,7 +997,7 @@ ${conversationText}`,
       // === Stage 3: Proposal → Output ===
       // ユーザーが同意したらタスク出力
       else if (taskBreakdownStage === "proposal") {
-        const userAgreed = /うん|お願い|いいね|そうだね|やろう|はい|yes|ok|オッケー|よろしく|分解/.test(message.toLowerCase());
+        const userAgreed = /うん|お願い|いいね|そうだね|やろう|はい|yes|ok|オッケー|よろしく|分解/.test(textToSend.toLowerCase());
 
         if (userAgreed) {
           setTaskBreakdownStage("output");
@@ -1073,14 +1012,6 @@ ${conversationText}`,
       else if (taskBreakdownStage === "output") {
         systemPrompt = getTaskOutputPrompt(hearingSummary, userProfile);
       }
-
-      // Few-shot examples を先頭に追加（AIに敬語ベースの会話を学習させる）
-      const fewShotExamples: Message[] = [
-        { role: "user", content: "新しいこと始めたい" },
-        { role: "assistant", content: "おお、いいですね！どんなことですか？" },
-        { role: "user", content: "まだ決まってないけど何か挑戦したくて" },
-        { role: "assistant", content: "そうなんですね！何かきっかけがあったんですか？" },
-      ];
 
       // === プラン3: トークン節約 ===
       // 会話履歴を直近10件（5往復）に制限
@@ -1107,14 +1038,10 @@ ${conversationText}`,
       if (fullSystemPrompt) {
         contextToSend = [
           { role: "user", content: fullSystemPrompt },
-          ...fewShotExamples,
           ...recentMessages,
         ];
       } else {
-        contextToSend = [
-          ...fewShotExamples,
-          ...recentMessages,
-        ];
+        contextToSend = recentMessages;
       }
 
       // AIシームレスモードで会話
@@ -1140,10 +1067,22 @@ ${conversationText}`,
           }
         }
 
-        const assistantMessage: Message = { role: "assistant", content: finalContent };
+        // AIが出力を「」で囲むことがあるので除去
+        finalContent = finalContent.replace(/^「/, '').replace(/」$/, '').trim();
+
+        // クイックリプライタグをパース
+        const parsed = parseQuickReplies(finalContent);
+        finalContent = parsed.content;
+
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: finalContent,
+          quickReply: parsed.quickReply ?? undefined,
+        };
         const allMessages = [...newMessages, assistantMessage];
         setMessages(allMessages);
         setCharacterMessage(finalContent);
+        setActiveQuickReply(parsed.quickReply);
 
         // Firestoreにアシスタントメッセージを保存
         try {
@@ -1197,25 +1136,6 @@ ${conversationText}`,
             });
           }
 
-          // 従来版ナレッジ抽出（後方互換）
-          if (shouldExtractKnowledge(allMessages.length, lastExtractionCount)) {
-            extractKnowledgeFromConversation(allMessages).then(async (extracted) => {
-              if (extracted && user) {
-                try {
-                  await updateUserKnowledge(user.uid, extracted);
-                  // ローカル状態も更新
-                  const updatedKnowledge = await getUserKnowledge(user.uid);
-                  setUserKnowledge(updatedKnowledge);
-                  setLastExtractionCount(allMessages.length);
-                  console.log("Knowledge extracted and saved:", extracted);
-                } catch (err) {
-                  console.error("Failed to save knowledge:", err);
-                }
-              }
-            }).catch(err => {
-              console.error("Knowledge extraction failed:", err);
-            });
-          }
         }
       } else {
         // レート制限やクォータエラーの検出
@@ -1290,6 +1210,28 @@ ${conversationText}`,
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // === クイックリプライハンドラー ===
+
+  // 単一選択: タップで即送信
+  const handleQuickSelect = (option: string) => {
+    setActiveQuickReply(null);
+    handleSendMessage(option);
+  };
+
+  // 複数選択: まとめて送信
+  const handleQuickMultiSubmit = (selectedOptions: string[]) => {
+    const text = selectedOptions.join('、');
+    setActiveQuickReply(null);
+    handleSendMessage(text);
+  };
+
+  // 優先順位: まとめて送信
+  const handleQuickRankSubmit = (orderedOptions: string[]) => {
+    const text = orderedOptions.map((opt, i) => `${i + 1}. ${opt}`).join(' → ');
+    setActiveQuickReply(null);
+    handleSendMessage(text);
   };
 
   // ローディング中またはユーザーがいない場合は何も表示しない
@@ -1509,6 +1451,19 @@ ${conversationText}`,
           )}
         </Box>
 
+        {/* クイックリプライボタン - モバイル版 */}
+        {activeQuickReply && !isLoading && !isTyping && (
+          <Box w="90%" maxW="340px" flexShrink={0} pb={2}>
+            <QuickReplyButtons
+              type={activeQuickReply.type}
+              options={activeQuickReply.options}
+              onSelect={handleQuickSelect}
+              onMultiSubmit={handleQuickMultiSubmit}
+              onRankSubmit={handleQuickRankSubmit}
+            />
+          </Box>
+        )}
+
         {/* 下部固定エリア（ログボタン + 入力欄 + 送信ボタン） - モバイル版 */}
         <Box w="90%" maxW="340px" flexShrink={0} pb={2}>
           {/* 入力欄と送信ボタンを横並びに */}
@@ -1566,7 +1521,7 @@ ${conversationText}`,
               aria-label="送信"
               colorScheme="teal"
               size="sm"
-              onClick={handleSendMessage}
+              onClick={() => handleSendMessage()}
               loading={isLoading}
               disabled={!message.trim() || isLoading}
               flexShrink={0}
@@ -1741,6 +1696,19 @@ ${conversationText}`,
             />
           )}
 
+          {/* クイックリプライボタン - PC版 */}
+          {activeQuickReply && !isLoading && !isTyping && (
+            <Box maxW="600px" w="100%">
+              <QuickReplyButtons
+                type={activeQuickReply.type}
+                options={activeQuickReply.options}
+                onSelect={handleQuickSelect}
+                onMultiSubmit={handleQuickMultiSubmit}
+                onRankSubmit={handleQuickRankSubmit}
+              />
+            </Box>
+          )}
+
           {/* チャット入力欄 - PC版（ログボタン + 入力欄 + 送信ボタン） */}
           <Box maxW="600px" w="100%">
             <VStack gap={4}>
@@ -1803,7 +1771,7 @@ ${conversationText}`,
                   size="lg"
                   h="60px"
                   w="60px"
-                  onClick={handleSendMessage}
+                  onClick={() => handleSendMessage()}
                   loading={isLoading}
                   disabled={!message.trim() || isLoading}
                   flexShrink={0}

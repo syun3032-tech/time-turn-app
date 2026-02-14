@@ -186,20 +186,6 @@ export interface ConversationMessage {
 }
 
 /**
- * ユーザーナレッジ（雑談から抽出した情報）- 従来版
- */
-export interface UserKnowledge {
-  userId: string
-  interests: string[]        // 興味・関心（「プログラミング」「英語学習」など）
-  experiences: string[]      // 経験・スキル（「Web開発3年」「TOEIC600点」など）
-  personality: string[]      // 性格・特性（「朝型」「計画好き」「完璧主義」など）
-  challenges: string[]       // 課題・苦手（「継続が苦手」「集中力が続かない」など）
-  goals: string[]           // 将来の夢・目標（「フリーランス」「海外移住」など）
-  context: string[]         // その他の文脈情報（「大学生」「仕事忙しい」など）
-  updatedAt: Date
-}
-
-/**
  * 構造化ユーザーナレッジ（深度・確信度・動機付き）
  * 日常会話から自然にユーザーを知り、蓄積し、活かす「相棒感」を実現
  */
@@ -254,6 +240,38 @@ export interface StructuredUserKnowledge {
     mood: 'good' | 'neutral' | 'low'  // その時の気分
   }>
 
+  // === スキル・経験（最大15件） ===
+  skills: Array<{
+    skill: string             // "Web開発3年", "TOEIC600点", "Photoshop使える"
+    level?: 'beginner' | 'intermediate' | 'advanced'  // 自己申告レベル
+  }>
+
+  // === 性格・特性（最大10件） ===
+  personalityTraits: Array<{
+    trait: string             // "完璧主義", "負けず嫌い", "飽き性"
+    evidence?: string         // どの発言から判断したか
+  }>
+
+  // === 課題・苦手なこと（最大10件） ===
+  struggles: Array<{
+    area: string              // "継続が苦手", "朝起きれない", "集中力が続かない"
+    detail?: string           // 具体的な状況
+  }>
+
+  // === 具体的な目標（最大10件） ===
+  concreteGoals: Array<{
+    goal: string              // "フリーランスになりたい", "TOEIC800点取りたい"
+    deadline?: string         // いつまでに
+    status?: 'active' | 'achieved' | 'abandoned'  // 現在の状況
+  }>
+
+  // === 好み・嗜好（最大15件） ===
+  preferences: Array<{
+    category: string          // "食べ物", "音楽", "映画", "場所"
+    like: string              // "ぶどう", "ロック", "ホラー"
+    sentiment: 'like' | 'dislike'  // 好き or 嫌い
+  }>
+
   // === 既存フィールド（後方互換） ===
   interests_legacy?: string[]
   experiences?: string[]
@@ -290,4 +308,25 @@ export interface ExtractedStructuredKnowledge {
     summary: string
     mood: 'good' | 'neutral' | 'low'
   }
+  skills?: Array<{
+    skill: string
+    level?: 'beginner' | 'intermediate' | 'advanced'
+  }>
+  personalityTraits?: Array<{
+    trait: string
+    evidence?: string
+  }>
+  struggles?: Array<{
+    area: string
+    detail?: string
+  }>
+  concreteGoals?: Array<{
+    goal: string
+    deadline?: string
+  }>
+  preferences?: Array<{
+    category: string
+    like: string
+    sentiment: 'like' | 'dislike'
+  }>
 }

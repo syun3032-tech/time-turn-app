@@ -1,18 +1,17 @@
 "use client";
 
 import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input, Textarea } from "@chakra-ui/react";
-import Link from "next/link";
 import { NavTabs } from "@/components/NavTabs";
 import { MiniCharacter } from "@/components/MiniCharacter";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { FiCalendar } from "react-icons/fi";
+import { FiCalendar, FiX } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTreeAsync, saveTaskTreeAsync } from "@/lib/task-tree-storage";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveCompletedTask, deleteCompletedTaskByTaskId } from "@/lib/firebase/firestore";
-import { TaskNode } from "@/types/task-tree";
+import { TaskNode, ChecklistItem } from "@/types/task-tree";
 import { ConfirmModal } from "@/components/ConfirmModal";
 
 const initialTreeBackup = [
@@ -141,7 +140,13 @@ const initialTreeBackup = [
 function calculateProgress(node: any): number {
   if (!node.children || node.children.length === 0) {
     // 子がない場合は、自身がアーカイブ済みなら100%、そうでなければ0%
-    return node.archived ? 100 : 0;
+    if (node.archived) return 100;
+    // サブタスクがある場合はその完了率を返す
+    if (node.checklist && node.checklist.length > 0) {
+      const done = node.checklist.filter((item: any) => item.done).length;
+      return Math.round((done / node.checklist.length) * 100);
+    }
+    return 0;
   }
 
   // 子要素の進捗を再帰的に計算
@@ -156,16 +161,205 @@ interface TreeNodeProps {
   expandedNodes: Set<string>;
   onToggle: (nodeId: string) => void;
   onAddChild: (parentId: string, type: string) => void;
-  onOpenPeriodModal: (node: any) => void;
+  onOpenDetail: (node: any, section?: "all" | "subtask") => void;
   onCompleteTask: (node: any) => void;
   onDelete: (nodeId: string) => void;
   onUpdateMemo: (nodeId: string, memo: string) => void;
+  onUpdateChecklist: (nodeId: string, checklist: ChecklistItem[]) => void;
   onRestoreTask: (nodeId: string) => void;
   highlightedId?: string | null;
   showArchived: boolean;
 }
 
-function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenPeriodModal, onCompleteTask, onDelete, onUpdateMemo, onRestoreTask, highlightedId, showArchived }: TreeNodeProps) {
+function ChecklistSection({ checklist, isArchived, onUpdate }: { checklist: ChecklistItem[]; isArchived: boolean; onUpdate: (newChecklist: ChecklistItem[]) => void }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [newItemText, setNewItemText] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+
+  const handleToggleItem = (itemId: string) => {
+    if (isArchived) return;
+    onUpdate(checklist.map(item => item.id === itemId ? { ...item, done: !item.done } : item));
+  };
+
+  const handleDeleteItem = (itemId: string) => {
+    if (isArchived) return;
+    onUpdate(checklist.filter(item => item.id !== itemId));
+  };
+
+  const handleAddItem = () => {
+    if (!newItemText.trim()) return;
+    const newItem: ChecklistItem = {
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: newItemText.trim(),
+      done: false,
+    };
+    onUpdate([...checklist, newItem]);
+    setNewItemText("");
+    setIsAdding(false);
+  };
+
+  const handleStartEdit = (item: ChecklistItem) => {
+    if (isArchived) return;
+    setEditingId(item.id);
+    setEditingText(item.text);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingId) return;
+    if (!editingText.trim()) {
+      // 空なら削除
+      onUpdate(checklist.filter(item => item.id !== editingId));
+    } else {
+      onUpdate(checklist.map(item => item.id === editingId ? { ...item, text: editingText.trim() } : item));
+    }
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const doneCount = checklist.filter(item => item.done).length;
+
+  if (checklist.length === 0 && !isAdding) {
+    return (
+      <Button
+        size="xs"
+        variant="ghost"
+        colorScheme="teal"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsAdding(true);
+        }}
+      >
+        + サブタスクを追加
+      </Button>
+    );
+  }
+
+  return (
+    <Box bg="gray.50" borderRadius="lg" p={2} onClick={(e) => e.stopPropagation()}>
+      {checklist.length > 0 && (
+        <Text fontSize="2xs" color="gray.500" mb={1}>{doneCount}/{checklist.length} 完了</Text>
+      )}
+      <VStack align="stretch" gap={1}>
+        {checklist.map((item) => (
+          <HStack key={item.id} gap={2} px={1} py={0.5} borderRadius="sm">
+            <Box
+              as="button"
+              w="18px"
+              h="18px"
+              minW="18px"
+              borderRadius="sm"
+              border="2px solid"
+              borderColor={item.done ? "teal.500" : "gray.300"}
+              bg={item.done ? "teal.500" : "transparent"}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              onClick={() => handleToggleItem(item.id)}
+              cursor={isArchived ? "default" : "pointer"}
+            >
+              {item.done && (
+                <Text fontSize="10px" color="white" fontWeight="bold">✓</Text>
+              )}
+            </Box>
+            {editingId === item.id ? (
+              <Input
+                size="xs"
+                value={editingText}
+                onChange={(e) => setEditingText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    handleSaveEdit();
+                  }
+                  if (e.key === "Escape") {
+                    handleCancelEdit();
+                  }
+                }}
+                onBlur={handleSaveEdit}
+                autoFocus
+                flex={1}
+                color="gray.800"
+                _placeholder={{ color: "gray.400" }}
+              />
+            ) : (
+              <Text
+                fontSize="xs"
+                color={item.done ? "gray.400" : "gray.700"}
+                textDecoration={item.done ? "line-through" : "none"}
+                flex={1}
+                cursor={isArchived ? "default" : "pointer"}
+                onClick={() => handleStartEdit(item)}
+              >
+                {item.text}
+              </Text>
+            )}
+            {!isArchived && editingId !== item.id && (
+              <Box
+                as="button"
+                onClick={() => handleDeleteItem(item.id)}
+                color="gray.400"
+                _hover={{ color: "red.400" }}
+                cursor="pointer"
+                flexShrink={0}
+              >
+                <FiX size={14} />
+              </Box>
+            )}
+          </HStack>
+        ))}
+      </VStack>
+      {!isArchived && (
+        isAdding ? (
+          <HStack mt={1} gap={1}>
+            <Input
+              size="xs"
+              placeholder="項目を入力..."
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  handleAddItem();
+                }
+                if (e.key === "Escape") {
+                  setNewItemText("");
+                  setIsAdding(false);
+                }
+              }}
+              autoFocus
+              color="gray.800"
+              _placeholder={{ color: "gray.400" }}
+            />
+            <Button size="xs" colorScheme="teal" onClick={handleAddItem} disabled={!newItemText.trim()}>
+              追加
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => { setNewItemText(""); setIsAdding(false); }}>
+              ×
+            </Button>
+          </HStack>
+        ) : (
+          <Button
+            size="xs"
+            variant="ghost"
+            colorScheme="teal"
+            mt={1}
+            onClick={() => setIsAdding(true)}
+          >
+            + 項目を追加
+          </Button>
+        )
+      )}
+    </Box>
+  );
+}
+
+function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpenDetail, onCompleteTask, onDelete, onUpdateMemo, onUpdateChecklist, onRestoreTask, highlightedId, showArchived }: TreeNodeProps) {
   // typeフィールドまたはタイトルプレフィックスで判定（両方の形式をサポート）
   const isTask = node.type === "Task" || node.title?.startsWith("Task:");
   const isGoal = node.type === "Goal" || node.title?.startsWith("Goal:");
@@ -177,14 +371,13 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   const isExpanded = expandedNodes.has(node.id);
   const isHighlighted = highlightedId === node.id;
   const nodeRef = useRef<HTMLDivElement>(null);
-  const [isMemoOpen, setIsMemoOpen] = useState(false);
-  const [memoText, setMemoText] = useState(node.memo || "");
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
-  // Tempo風: 子要素があるかどうかで表示を切り替え
-  const showProgressBar = hasChildren; // 子があれば進捗バー
-  const showCheckbox = !hasChildren && !isArchived; // 子がなければチェックボックス表示
-  const progress = hasChildren ? calculateProgress(node) : 0;
+  // Tempo風: 子要素があるかどうか、またはサブタスクがあるかで表示を切り替え
+  const hasChecklist = node.checklist && node.checklist.length > 0;
+  const showProgressBar = hasChildren || hasChecklist; // 子またはサブタスクがあれば進捗バー
+  const showCheckbox = !hasChildren && !hasChecklist && !isArchived; // どちらもなければチェックボックス表示
+  const progress = showProgressBar ? calculateProgress(node) : 0;
 
   // Check if any child is expanded
   const hasExpandedChild = hasChildren && node.children.some((child: any) => expandedNodes.has(child.id));
@@ -267,6 +460,17 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                   <Button
                     size="xs"
                     variant="ghost"
+                    colorScheme="teal"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDetail(node);
+                    }}
+                  >
+                    詳細
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
                     colorScheme="gray"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -318,22 +522,7 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 </HStack>
               )}
 
-              {isTask && (
-                <HStack gap={2} flexWrap="wrap">
-                  <Box w="8px" h="8px" borderRadius="full" bg={node.ai ? "pink.400" : "gray.300"} />
-                  {node.ai && <Badge size="sm" colorScheme="pink">AI実行可</Badge>}
-                </HStack>
-              )}
-
-              {!isTask && !showProgressBar && (
-                <Flex gap={2} fontSize={{ base: "2xs", md: "xs" }} color="gray.700" flexWrap="wrap">
-                  <Text>OKR</Text>
-                  <Text>KPI</Text>
-                  <Text>Action Map</Text>
-                </Flex>
-              )}
-
-              {/* Period display */}
+              {/* Period display (read-only) */}
               {node.endDate && (
                 <HStack gap={1} fontSize={{ base: "2xs", md: "xs" }} color="teal.600">
                   <FiCalendar />
@@ -343,96 +532,50 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
                 </HStack>
               )}
 
-              {/* メモエリア（角丸四角、常に1行表示、タップで展開） */}
-              <Box
-                w="full"
-                bg="gray.100"
-                borderRadius="lg"
-                px={3}
-                py={2}
-                cursor="pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsMemoOpen(!isMemoOpen);
-                }}
-                _hover={{ bg: "gray.200" }}
-                transition="background 0.2s"
-              >
-                {isMemoOpen ? (
-                  // 展開時: 編集可能
-                  <VStack align="stretch" gap={2} onClick={(e) => e.stopPropagation()}>
-                    <Textarea
-                      placeholder="メモを入力..."
-                      value={memoText}
-                      onChange={(e) => setMemoText(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      size="sm"
-                      bg="white"
-                      color="gray.800"
-                      _placeholder={{ color: "gray.500" }}
-                      rows={3}
-                      resize="vertical"
-                    />
-                    <HStack justify="flex-end" gap={2}>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMemoText(node.memo || "");
-                          setIsMemoOpen(false);
-                        }}
-                      >
-                        キャンセル
-                      </Button>
-                      <Button
-                        size="xs"
-                        colorScheme="teal"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUpdateMemo(node.id, memoText);
-                          setIsMemoOpen(false);
-                        }}
-                      >
-                        保存
-                      </Button>
-                    </HStack>
-                  </VStack>
-                ) : (
-                  // 閉じている時: 1行目のみ表示（複数行なら...で省略）
+              {/* メモ1行プレビュー（読み取り専用、タップで詳細モーダルを開く） */}
+              {node.memo && (
+                <Box
+                  w="full"
+                  bg="gray.100"
+                  borderRadius="lg"
+                  px={3}
+                  py={1.5}
+                  cursor="pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetail(node);
+                  }}
+                  _hover={{ bg: "gray.200" }}
+                  transition="background 0.2s"
+                >
                   <Text
                     fontSize="xs"
-                    color={node.memo ? "gray.700" : "gray.400"}
+                    color="gray.700"
+                    lineClamp={1}
                   >
-                    {node.memo
-                      ? node.memo.split('\n')[0] + (node.memo.includes('\n') ? '...' : '')
-                      : "タップしてメモを追加..."}
+                    {node.memo.split('\n')[0]}
                   </Text>
-                )}
-              </Box>
+                </Box>
+              )}
 
-              {/* 期限ボタン */}
-              <Button
-                size="xs"
-                variant="ghost"
-                colorScheme="teal"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenPeriodModal(node);
-                }}
-              >
-                <HStack gap={1}>
-                  <FiCalendar />
-                  <Text>{node.endDate ? "期限を変更" : "期限を設定"}</Text>
-                </HStack>
-              </Button>
-
-              {isTask && node.ai && !isArchived && (
-                <Link href="/tasks/sample-task-id/run">
-                  <Button size="xs" colorScheme="teal" variant="outline" w="full">
-                    AI実行へ
-                  </Button>
-                </Link>
+              {/* サブタスク サマリー（Taskノードのみ、読み取り専用） */}
+              {isTask && node.checklist && node.checklist.length > 0 && (
+                <Box
+                  bg="gray.50"
+                  borderRadius="lg"
+                  px={3}
+                  py={1.5}
+                  cursor="pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetail(node, "subtask");
+                  }}
+                  _hover={{ bg: "gray.100" }}
+                >
+                  <Text fontSize="xs" color="gray.600">
+                    サブタスク: {node.checklist.filter((item: any) => item.done).length}/{node.checklist.length} 完了
+                  </Text>
+                </Box>
               )}
 
               {isArchived && (
@@ -457,10 +600,11 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
               expandedNodes={expandedNodes}
               onToggle={onToggle}
               onAddChild={onAddChild}
-              onOpenPeriodModal={onOpenPeriodModal}
+              onOpenDetail={onOpenDetail}
               onCompleteTask={onCompleteTask}
               onDelete={onDelete}
               onUpdateMemo={onUpdateMemo}
+              onUpdateChecklist={onUpdateChecklist}
               onRestoreTask={onRestoreTask}
               highlightedId={highlightedId}
               showArchived={showArchived}
@@ -506,6 +650,67 @@ function TreeNode({ node, level = 0, expandedNodes, onToggle, onAddChild, onOpen
   );
 }
 
+function DetailDateSection({ detailEndDate, setDetailEndDate }: { detailEndDate: Date | null; setDetailEndDate: (d: Date | null) => void }) {
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  const formatDisplay = (date: Date | null) => {
+    if (!date) return null;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}/${month}/${day}`;
+  };
+
+  return (
+    <Box>
+      <HStack
+        bg="gray.50"
+        borderRadius="lg"
+        px={3}
+        py={2}
+        cursor="pointer"
+        onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+        _hover={{ bg: "gray.100" }}
+        transition="background 0.2s"
+        border="1px solid"
+        borderColor="gray.200"
+      >
+        <FiCalendar color="gray" />
+        <Text fontSize="sm" color={detailEndDate ? "gray.800" : "gray.400"} flex={1}>
+          {detailEndDate ? formatDisplay(detailEndDate) : "タップして期限を設定"}
+        </Text>
+        {detailEndDate && (
+          <Box
+            as="button"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              setDetailEndDate(null);
+            }}
+            color="gray.400"
+            _hover={{ color: "red.400" }}
+          >
+            <FiX size={14} />
+          </Box>
+        )}
+        <Text fontSize="xs" color="gray.400">{isCalendarOpen ? "▲" : "▼"}</Text>
+      </HStack>
+      {isCalendarOpen && (
+        <Box mt={2}>
+          <DatePicker
+            selected={detailEndDate}
+            onChange={(date) => {
+              setDetailEndDate(date);
+              setIsCalendarOpen(false);
+            }}
+            dateFormat="yyyy/MM/dd"
+            inline
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function TasksPageContent() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -516,6 +721,7 @@ function TasksPageContent() {
   const [isTreeLoading, setIsTreeLoading] = useState(true);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
 
   // Goal追加モーダル用state
   const [isAddGoalModalOpen, setIsAddGoalModalOpen] = useState(false);
@@ -604,10 +810,15 @@ function TasksPageContent() {
     }
   }, [highlightId, tree]);
 
-  // Period modal state
-  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [tempEndDate, setTempEndDate] = useState<Date | null>(null);
+  // 詳細モーダル用state
+  const [detailNode, setDetailNode] = useState<any>(null);
+  const [detailMemoText, setDetailMemoText] = useState("");
+  const [detailEndDate, setDetailEndDate] = useState<Date | null>(null);
+  const [detailSection, setDetailSection] = useState<"all" | "subtask">("all");
+
+  // AIと相談用state
+  const [chatFocusNode, setChatFocusNode] = useState<any>(null);
+  const chatOpenRef = useRef<(() => void) | null>(null);
 
   const handleToggle = (nodeId: string) => {
     setExpandedNodes((prev) => {
@@ -699,17 +910,16 @@ function TasksPageContent() {
     setIsAddGoalModalOpen(false);
   };
 
-  const handleOpenPeriodModal = (node: any) => {
-    setSelectedNode(node);
-    // Convert string date to Date object
-    setTempEndDate(node.endDate ? new Date(node.endDate) : null);
-    setIsPeriodModalOpen(true);
+  const handleOpenDetail = (node: any, section: "all" | "subtask" = "all") => {
+    setDetailNode(node);
+    setDetailMemoText(node.memo || "");
+    setDetailEndDate(node.endDate ? new Date(node.endDate) : null);
+    setDetailSection(section);
   };
 
-  const handleSavePeriod = () => {
-    if (!selectedNode) return;
+  const handleSaveDetail = () => {
+    if (!detailNode) return;
 
-    // Convert Date object to string format (YYYY-MM-DD)
     const formatDate = (date: Date | null) => {
       if (!date) return "";
       const year = date.getFullYear();
@@ -718,27 +928,22 @@ function TasksPageContent() {
       return `${year}-${month}-${day}`;
     };
 
-    // Recursively find and update the node's endDate
+    const formattedDate = formatDate(detailEndDate);
+
+    // メモと期限をまとめてツリーに反映
     const updateTree = (nodes: any[]): any[] => {
       return nodes.map((node) => {
-        if (node.id === selectedNode.id) {
-          return {
-            ...node,
-            endDate: formatDate(tempEndDate),
-          };
+        if (node.id === detailNode.id) {
+          return { ...node, memo: detailMemoText, endDate: formattedDate };
         } else if (node.children) {
-          return {
-            ...node,
-            children: updateTree(node.children),
-          };
+          return { ...node, children: updateTree(node.children) };
         }
         return node;
       });
     };
 
     setTree(updateTree(tree));
-    setIsPeriodModalOpen(false);
-    setSelectedNode(null);
+    setDetailNode(null);
   };
 
   const handleCompleteTask = async (node: any) => {
@@ -832,6 +1037,21 @@ function TasksPageContent() {
     setTree(updateTree(tree));
   };
 
+  const handleUpdateChecklist = (nodeId: string, checklist: ChecklistItem[]) => {
+    const updateTree = (nodes: any[]): any[] => {
+      return nodes.map((n) => {
+        if (n.id === nodeId) {
+          return { ...n, checklist };
+        }
+        if (n.children) {
+          return { ...n, children: updateTree(n.children) };
+        }
+        return n;
+      });
+    };
+    setTree(updateTree(tree));
+  };
+
   const handleRestoreTask = async (nodeId: string) => {
     if (!user) return;
 
@@ -906,12 +1126,13 @@ function TasksPageContent() {
                 expandedNodes={expandedNodes}
                 onToggle={handleToggle}
                 onAddChild={handleAddChild}
-                onOpenPeriodModal={handleOpenPeriodModal}
+                onOpenDetail={handleOpenDetail}
                 onCompleteTask={handleCompleteTask}
                 onDelete={handleDelete}
                 onUpdateMemo={handleUpdateMemo}
+                onUpdateChecklist={handleUpdateChecklist}
                 onRestoreTask={handleRestoreTask}
-                highlightedId={highlightId}
+                highlightedId={highlightedNodeId || highlightId}
                 showArchived={showArchived}
               />
             ))}
@@ -941,7 +1162,7 @@ function TasksPageContent() {
             title: `${nodeType}: ${title}`,
             type: nodeType,
             children: nodeType === "Task" ? undefined : [],
-            memo: memo || undefined, // メモがあれば設定
+            memo: memo || undefined,
           };
 
           if (nodeType === "Task") {
@@ -951,72 +1172,76 @@ function TasksPageContent() {
 
           // parentId が null の場合は新しい Goal をルートに追加
           if (parentId === null) {
-            setTree([...tree, newNode]);
-            return;
+            setTree(prev => [...prev, newNode]);
+            setHighlightedNodeId(newNode.id);
+            setTimeout(() => setHighlightedNodeId(null), 3000);
+            return newNode.id;
           }
 
-          // 親ノードの種類をチェック
-          const findNode = (nodes: any[], id: string): any | null => {
-            for (const node of nodes) {
-              if (node.id === id) return node;
-              if (node.children) {
-                const found = findNode(node.children, id);
-                if (found) return found;
+          // 関数型更新で最新のtreeを使う（連続呼び出し対応）
+          setTree(prev => {
+            // 親ノードの種類をチェック
+            const findNode = (nodes: any[], id: string): any | null => {
+              for (const node of nodes) {
+                if (node.id === id) return node;
+                if (node.children) {
+                  const found = findNode(node.children, id);
+                  if (found) return found;
+                }
               }
-            }
-            return null;
-          };
-
-          const parentNode = findNode(tree, parentId);
-          if (parentNode) {
-            const parentType = parentNode.type ||
-              (parentNode.title?.startsWith("Goal:") ? "Goal" :
-               parentNode.title?.startsWith("Project:") ? "Project" :
-               parentNode.title?.startsWith("Milestone:") ? "Milestone" :
-               parentNode.title?.startsWith("Task:") ? "Task" : null);
-
-            // 階層バリデーション
-            const validChildTypes: Record<string, string> = {
-              "Goal": "Project",
-              "Project": "Milestone",
-              "Milestone": "Task",
+              return null;
             };
 
-            if (parentType && validChildTypes[parentType] !== nodeType) {
-              console.warn(`階層エラー: ${parentType} の下に ${nodeType} は追加できません。`);
-              // 適切な階層に自動修正
-              const correctedType = validChildTypes[parentType];
-              if (correctedType) {
-                newNode.id = `${correctedType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-                newNode.title = `${correctedType}: ${title}`;
-                newNode.type = correctedType;
-                newNode.children = correctedType === "Task" ? undefined : [];
-                if (correctedType === "Task") {
-                  newNode.ai = false;
-                  newNode.status = "未着手";
+            const parentNode = findNode(prev, parentId);
+            if (parentNode) {
+              const parentType = parentNode.type ||
+                (parentNode.title?.startsWith("Goal:") ? "Goal" :
+                 parentNode.title?.startsWith("Project:") ? "Project" :
+                 parentNode.title?.startsWith("Milestone:") ? "Milestone" :
+                 parentNode.title?.startsWith("Task:") ? "Task" : null);
+
+              // 階層バリデーション
+              const validChildTypes: Record<string, string> = {
+                "Goal": "Project",
+                "Project": "Milestone",
+                "Milestone": "Task",
+              };
+
+              if (parentType && validChildTypes[parentType] !== nodeType) {
+                console.warn(`階層エラー: ${parentType} の下に ${nodeType} は追加できません。`);
+                const correctedType = validChildTypes[parentType];
+                if (correctedType) {
+                  newNode.id = `${correctedType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+                  newNode.title = `${correctedType}: ${title}`;
+                  newNode.type = correctedType;
+                  newNode.children = correctedType === "Task" ? undefined : [];
+                  if (correctedType === "Task") {
+                    newNode.ai = false;
+                    newNode.status = "未着手";
+                  }
                 }
               }
             }
-          }
 
-          const updateTree = (nodes: any[]): any[] => {
-            return nodes.map((node) => {
-              if (node.id === parentId) {
-                return {
-                  ...node,
-                  children: [...(node.children || []), newNode],
-                };
-              } else if (node.children) {
-                return {
-                  ...node,
-                  children: updateTree(node.children),
-                };
-              }
-              return node;
-            });
-          };
+            const updateNodes = (nodes: any[]): any[] => {
+              return nodes.map((node) => {
+                if (node.id === parentId) {
+                  return {
+                    ...node,
+                    children: [...(node.children || []), newNode],
+                  };
+                } else if (node.children) {
+                  return {
+                    ...node,
+                    children: updateNodes(node.children),
+                  };
+                }
+                return node;
+              });
+            };
 
-          setTree(updateTree(tree));
+            return updateNodes(prev);
+          });
 
           // 親ノードを自動展開
           setExpandedNodes((prev) => {
@@ -1024,42 +1249,121 @@ function TasksPageContent() {
             newSet.add(parentId);
             return newSet;
           });
+
+          // 追加したノードをハイライト（3秒後に消える）
+          setHighlightedNodeId(newNode.id);
+          setTimeout(() => setHighlightedNodeId(null), 3000);
+
+          return newNode.id;
         }}
         onUpdateMemo={handleUpdateMemo}
+        onUpdateChecklist={handleUpdateChecklist}
+        focusNode={chatFocusNode}
+        onFocusNodeHandled={() => setChatFocusNode(null)}
+        chatOpenRef={chatOpenRef}
       />
       <NavTabs shrink={isMiniChatOpen} />
 
-      {/* Period Modal */}
-      <Dialog.Root open={isPeriodModalOpen} onOpenChange={(e) => setIsPeriodModalOpen(e.open)}>
+      {/* 詳細モーダル */}
+      <Dialog.Root open={detailNode !== null} onOpenChange={(e) => { if (!e.open) setDetailNode(null); }}>
         <Dialog.Backdrop />
         <Dialog.Positioner display="flex" alignItems="center" justifyContent="center">
-          <Dialog.Content maxW="400px" mx={4}>
-            <Dialog.Header>
-              <Dialog.Title color="gray.800">期限を設定</Dialog.Title>
-              <Dialog.CloseTrigger />
+          <Dialog.Content maxW="420px" mx={4} borderRadius="xl" overflow="hidden">
+            <Dialog.Header bg="teal.500" py={3} px={4}>
+              <Dialog.Title color="white" fontSize="md" lineClamp={2}>{detailNode?.title}</Dialog.Title>
+              <Dialog.CloseTrigger color="white" />
             </Dialog.Header>
-            <Dialog.Body>
-              <VStack align="stretch" gap={4}>
-                <Box>
-                  <Text fontSize="sm" fontWeight="semibold" mb={2}>終了日</Text>
-                  <DatePicker
-                    selected={tempEndDate}
-                    onChange={(date) => setTempEndDate(date)}
-                    dateFormat="yyyy/MM/dd"
-                    inline
-                                      />
-                </Box>
+            <Dialog.Body py={4} px={4}>
+              <VStack align="stretch" gap={0}>
+                {/* ミニ秘書ちゃんと相談するボタン（allモードのみ） */}
+                {detailSection === "all" && (
+                  <Box pb={3}>
+                    <Button
+                      variant="outline"
+                      colorScheme="purple"
+                      w="full"
+                      borderRadius="lg"
+                      onClick={() => {
+                        const node = detailNode;
+                        setDetailNode(null);
+                        setChatFocusNode(node);
+                        setTimeout(() => {
+                          chatOpenRef.current?.();
+                        }, 100);
+                      }}
+                    >
+                      ミニ秘書ちゃんと相談する
+                    </Button>
+                    <Box h="1px" bg="gray.100" mt={3} />
+                  </Box>
+                )}
+
+                {/* メモ編集（allモードのみ） */}
+                {detailSection === "all" && (
+                  <>
+                    <Box py={3}>
+                      <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={2} textTransform="uppercase" letterSpacing="wide">メモ</Text>
+                      <Textarea
+                        placeholder="メモを入力..."
+                        value={detailMemoText}
+                        onChange={(e) => setDetailMemoText(e.target.value)}
+                        size="sm"
+                        bg="gray.50"
+                        color="gray.800"
+                        _placeholder={{ color: "gray.400" }}
+                        rows={3}
+                        resize="vertical"
+                        borderColor="gray.200"
+                        borderRadius="lg"
+                        _focus={{ borderColor: "teal.400", bg: "white" }}
+                      />
+                    </Box>
+                    <Box h="1px" bg="gray.100" />
+                  </>
+                )}
+
+                {/* サブタスク（Taskノードのみ） */}
+                {detailNode && (detailNode.type === "Task" || detailNode.title?.startsWith("Task:")) && (
+                  <>
+                    <Box py={3}>
+                      <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={2} textTransform="uppercase" letterSpacing="wide">サブタスク</Text>
+                      <ChecklistSection
+                        checklist={detailNode.checklist || []}
+                        isArchived={detailNode.archived === true}
+                        onUpdate={(newChecklist) => {
+                          handleUpdateChecklist(detailNode.id, newChecklist);
+                          setDetailNode({ ...detailNode, checklist: newChecklist });
+                        }}
+                      />
+                    </Box>
+                    {detailSection === "all" && <Box h="1px" bg="gray.100" />}
+                  </>
+                )}
+
+                {/* 期限設定（allモードのみ） */}
+                {detailSection === "all" && (
+                  <Box py={3}>
+                    <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={2} textTransform="uppercase" letterSpacing="wide">期限</Text>
+                    <DetailDateSection detailEndDate={detailEndDate} setDetailEndDate={setDetailEndDate} />
+                  </Box>
+                )}
               </VStack>
             </Dialog.Body>
-            <Dialog.Footer>
-              <HStack w="full" justify="flex-end" gap={2}>
-                <Button variant="outline" onClick={() => setIsPeriodModalOpen(false)}>
-                  キャンセル
+            <Dialog.Footer px={4} pb={4} pt={0}>
+              {detailSection === "all" ? (
+                <HStack w="full" gap={2}>
+                  <Button variant="outline" flex={1} onClick={() => setDetailNode(null)} borderRadius="lg">
+                    キャンセル
+                  </Button>
+                  <Button colorScheme="teal" flex={1} onClick={handleSaveDetail} borderRadius="lg">
+                    保存
+                  </Button>
+                </HStack>
+              ) : (
+                <Button variant="outline" w="full" onClick={() => setDetailNode(null)} borderRadius="lg">
+                  閉じる
                 </Button>
-                <Button colorScheme="teal" onClick={handleSavePeriod}>
-                  保存
-                </Button>
-              </HStack>
+              )}
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>

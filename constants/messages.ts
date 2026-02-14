@@ -12,6 +12,14 @@ export interface MessageWithExpression {
 
 /**
  * 挨拶・初回対面
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  */
 
 export const GREETING_MESSAGES = {

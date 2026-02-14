@@ -26,13 +26,14 @@ import {
 } from "@/lib/firebase/firestore";
 import type { Conversation } from "@/lib/firebase/firestore-types";
 import { ConfirmModal } from "./ConfirmModal";
+import { ChecklistItem } from "@/types/task-tree";
 
 // ノードタイプの型定義
 type NodeType = "Goal" | "Project" | "Milestone" | "Task";
 
 // 単一アクションの型
 interface ActionItem {
-  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo";
+  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo" | "add_checklist";
   parentId?: string;
   parentTitle?: string;
   title?: string;
@@ -40,6 +41,7 @@ interface ActionItem {
   nodeType?: NodeType;
   nodeId?: string;
   memo?: string; // ノード追加時のメモ、またはメモ追加時の内容
+  checklistItems?: string[]; // チェックリスト項目のテキスト配列
   selected?: boolean; // 複数選択時の選択状態
   success?: boolean;
 }
@@ -56,8 +58,11 @@ interface MiniCharacterChatProps {
   onClose: () => void;
   taskTree?: any[];
   onAddTask?: (parentId: string, title: string) => void;
-  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => void;
+  onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => string | void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
+  onUpdateChecklist?: (nodeId: string, checklist: ChecklistItem[]) => void;
+  focusNode?: any;
+  onFocusNodeHandled?: () => void;
 }
 
 // タスクツリーをAI用に文字列化
@@ -72,8 +77,11 @@ function serializeTreeForChat(tree: any[], depth: number = 0, maxDepth: number =
     const status = isArchived ? "[完了]" : "";
     const memo = node.memo ? ` (メモ: ${node.memo})` : "";
     const deadline = node.endDate ? ` [期限: ${node.endDate}]` : "";
+    const checklist = node.checklist && node.checklist.length > 0
+      ? ` (チェックリスト: ${node.checklist.filter((c: any) => c.done).length}/${node.checklist.length}完了)`
+      : "";
 
-    result += `${indent}- ${node.title}${status}${deadline}${memo}\n`;
+    result += `${indent}- ${node.title}${status}${deadline}${memo}${checklist}\n`;
 
     if (node.children && node.children.length > 0 && depth < maxDepth) {
       result += serializeTreeForChat(node.children, depth + 1, maxDepth);
@@ -81,6 +89,59 @@ function serializeTreeForChat(tree: any[], depth: number = 0, maxDepth: number =
   }
 
   return result;
+}
+
+// フォーカスノードの詳細情報を生成
+function serializeFocusNode(node: any, tree: any[]): string {
+  if (!node) return "";
+
+  const nodeType = node.type ||
+    (node.title?.startsWith("Goal:") ? "Goal" :
+     node.title?.startsWith("Project:") ? "Project" :
+     node.title?.startsWith("Milestone:") ? "Milestone" : "Task");
+
+  // 親ノードのパスを探す
+  const findPath = (nodes: any[], targetId: string, path: string[] = []): string[] | null => {
+    for (const n of nodes) {
+      if (n.id === targetId) return path;
+      if (n.children) {
+        const result = findPath(n.children, targetId, [...path, n.title]);
+        if (result) return result;
+      }
+    }
+    return null;
+  };
+
+  const parentPath = findPath(tree, node.id) || [];
+  let info = `\n【★ 現在相談中のノード】\n`;
+  info += `タイトル: ${node.title}\n`;
+  info += `種類: ${nodeType}\n`;
+  if (parentPath.length > 0) {
+    info += `階層: ${parentPath.join(" → ")} → ${node.title}\n`;
+  }
+  if (node.memo) {
+    info += `メモ: ${node.memo}\n`;
+  }
+  if (node.endDate) {
+    info += `期限: ${node.endDate}\n`;
+  }
+  if (node.checklist && node.checklist.length > 0) {
+    const done = node.checklist.filter((c: any) => c.done).length;
+    info += `サブタスク: ${done}/${node.checklist.length}完了\n`;
+    node.checklist.forEach((item: any) => {
+      info += `  ${item.done ? "✓" : "□"} ${item.text}\n`;
+    });
+  }
+  if (node.children && node.children.length > 0) {
+    info += `子要素:\n`;
+    for (const child of node.children) {
+      const archived = child.archived ? " [完了]" : "";
+      info += `  - ${child.title}${archived}\n`;
+    }
+  }
+  info += `\n★ このノードについてユーザーが相談しに来ています。このノードの状況を踏まえて会話してください。\n`;
+
+  return info;
 }
 
 // 未完了タスクを抽出
@@ -162,6 +223,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
       .replace(/\[ADD_MILESTONE:[^\]]+\]/g, "")
       .replace(/\[ADD_TASK:[^\]]+\]/g, "")
       .replace(/\[ADD_MEMO:[^\]]+\]/g, "")
+      .replace(/\[ADD_CHECKLIST:[^\]]+\]/g, "")
       .trim();
   };
 
@@ -356,6 +418,24 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
     });
   }
 
+  // チェックリスト追加: [ADD_CHECKLIST:Task名:項目1,項目2,項目3] （複数対応）
+  const checklistMatches = content.matchAll(/\[ADD_CHECKLIST:([^:]+):([^\]]+)\]/g);
+  for (const match of checklistMatches) {
+    const taskSearch = match[1].trim();
+    const items = match[2].split(',').map(s => s.trim()).filter(s => s.length > 0);
+    const node = findNodeByIdOrTitle(tree, taskSearch);
+
+    if (node && items.length > 0) {
+      actions.push({
+        type: "add_checklist",
+        nodeId: node.id,
+        parentTitle: node.title?.replace(/^Task:\s*/, "") || taskSearch,
+        checklistItems: items,
+        selected: true,
+      });
+    }
+  }
+
   return { cleanContent: cleanAllTags(content), actions };
 }
 
@@ -374,7 +454,7 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
 }
 
-export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo }: MiniCharacterChatProps) {
+export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, focusNode, onFocusNodeHandled }: MiniCharacterChatProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -383,6 +463,9 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+
+  // 現在フォーカス中のノード（システムプロンプトに使用）
+  const [currentFocusNode, setCurrentFocusNode] = useState<any>(null);
 
   // 履歴選択モード（吹き出し内で表示）
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
@@ -462,6 +545,40 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
     // 挨拶をセット
     setMessages([{ role: "assistant", content: greeting }]);
   }, [isLoadingHistory, taskTree, conversationId, messages.length]);
+
+  // focusNode が設定された時: 新しい会話を開始してそのタスクについて聞く
+  useEffect(() => {
+    if (!focusNode || !isOpen) return;
+
+    const nodeName = focusNode.title?.replace(/^(Task:|Milestone:|Project:|Goal:)\s*/, "") || "";
+    const nodeType = focusNode.type ||
+      (focusNode.title?.startsWith("Goal:") ? "Goal" :
+       focusNode.title?.startsWith("Project:") ? "Project" :
+       focusNode.title?.startsWith("Milestone:") ? "Milestone" : "Task");
+
+    let greeting = "";
+    if (nodeType === "Task") {
+      const greetings = [
+        `「${nodeName}」について相談ですね。今どんな状況ですか？困ってることがあれば教えてください。`,
+        `「${nodeName}」ですね。進み具合はどうですか？一緒に整理しましょう。`,
+        `…「${nodeName}」、最近どうなってます？状況を聞かせてください。`,
+      ];
+      greeting = greetings[Math.floor(Math.random() * greetings.length)];
+    } else {
+      const greetings = [
+        `「${nodeName}」について話しましょう。今の進捗や課題を教えてください。`,
+        `「${nodeName}」ですね。どこから整理しましょうか？`,
+      ];
+      greeting = greetings[Math.floor(Math.random() * greetings.length)];
+    }
+
+    // 新しい会話として開始
+    setCurrentFocusNode(focusNode);
+    setConversationId(null);
+    setMessages([{ role: "assistant", content: greeting }]);
+    setShowHistoryPicker(false);
+    onFocusNodeHandled?.();
+  }, [focusNode, isOpen]);
 
   // 自動スクロール（メッセージ追加時 + タイピング中）
   useEffect(() => {
@@ -600,9 +717,32 @@ ${conversationText}`,
     if (!msg.actions || msg.actions.length === 0) return;
 
     if (confirm) {
-      // 選択されたアクションを実行
-      const updatedActions = msg.actions.map(action => {
-        if (!action.selected) return { ...action, success: undefined };
+      // 階層順にソート: Goal → Project → Milestone → Task → memo → checklist
+      const typeOrder: Record<string, number> = {
+        "add_goal": 0,
+        "add_project": 1,
+        "add_milestone": 2,
+        "add_task": 3,
+        "add_memo": 4,
+        "add_checklist": 5,
+      };
+
+      // インデックス付きで元の順序も保持
+      const indexedActions = msg.actions.map((action, idx) => ({ action, originalIdx: idx }));
+      const sorted = [...indexedActions].sort(
+        (a, b) => (typeOrder[a.action.type] ?? 99) - (typeOrder[b.action.type] ?? 99)
+      );
+
+      // 追加済みノードの title → id マッピング（同一バッチ内で親を引き継ぐ）
+      const createdNodes: Map<string, string> = new Map();
+
+      const updatedActions = [...msg.actions];
+
+      for (const { action, originalIdx } of sorted) {
+        if (!action.selected) {
+          updatedActions[originalIdx] = { ...action, success: undefined };
+          continue;
+        }
 
         const title = action.title || action.taskTitle || "";
         let success = false;
@@ -611,39 +751,64 @@ ${conversationText}`,
           switch (action.type) {
             case "add_goal":
               if (title) {
-                onAddNode(null, title, "Goal", action.memo);
+                const newId = onAddNode(null, title, "Goal", action.memo);
                 success = true;
+                if (newId) createdNodes.set(title, newId);
               }
               break;
-            case "add_project":
-              if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Project", action.memo);
+            case "add_project": {
+              // parentIdが無ければ、同バッチで作ったノードからparentTitleで探す
+              const pid = action.parentId || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined);
+              if (pid && title) {
+                const newId = onAddNode(pid, title, "Project", action.memo);
                 success = true;
+                if (newId) createdNodes.set(title, newId);
               }
               break;
-            case "add_milestone":
-              if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Milestone", action.memo);
+            }
+            case "add_milestone": {
+              const pid = action.parentId || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined);
+              if (pid && title) {
+                const newId = onAddNode(pid, title, "Milestone", action.memo);
                 success = true;
+                if (newId) createdNodes.set(title, newId);
               }
               break;
-            case "add_task":
-              if (action.parentId && title) {
-                onAddNode(action.parentId, title, "Task", action.memo);
+            }
+            case "add_task": {
+              const pid = action.parentId || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined);
+              if (pid && title) {
+                const newId = onAddNode(pid, title, "Task", action.memo);
                 success = true;
+                if (newId) createdNodes.set(title, newId);
               }
               break;
+            }
             case "add_memo":
               if (action.nodeId && action.memo && onUpdateMemo) {
                 onUpdateMemo(action.nodeId, action.memo);
                 success = true;
               }
               break;
+            case "add_checklist":
+              if (action.nodeId && action.checklistItems && onUpdateChecklist) {
+                const existingNode = findNodeByIdOrTitle(taskTree || [], action.nodeId);
+                const existingChecklist: ChecklistItem[] = existingNode?.checklist || [];
+                const newItems: ChecklistItem[] = action.checklistItems.map(text => ({
+                  id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  text,
+                  done: false,
+                }));
+                onUpdateChecklist(action.nodeId, [...existingChecklist, ...newItems]);
+                success = true;
+              }
+              break;
           }
         } else if (onAddTask) {
           // 後方互換性
-          if (action.type === "add_task" && title && action.parentId) {
-            onAddTask(action.parentId, title);
+          const pid = action.parentId || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined);
+          if (action.type === "add_task" && title && pid) {
+            onAddTask(pid, title);
             success = true;
           } else if (action.type === "add_memo" && action.memo && action.nodeId && onUpdateMemo) {
             onUpdateMemo(action.nodeId, action.memo);
@@ -651,8 +816,8 @@ ${conversationText}`,
           }
         }
 
-        return { ...action, success };
-      });
+        updatedActions[originalIdx] = { ...action, success };
+      }
 
       setMessages(prev => prev.map((m, i) =>
         i === msgIndex
@@ -768,6 +933,13 @@ Goal → Project → Milestone → Task の階層を必ず守ること。
 ■ 既存ノードにメモを追加
 [ADD_MEMO:ノード名:メモ内容]
 
+■ Taskにチェックリスト（サブステップ）を追加
+[ADD_CHECKLIST:Task名:項目1,項目2,項目3]
+例: 「ステップを分けるとこんな感じかな！[ADD_CHECKLIST:公式問題集Part1:問題を解く,答え合わせ,間違った問題の復習]」
+
+※ Taskの下にTaskは作れないので、具体的な手順やサブステップはチェックリストで管理する
+※ チェックリストの各項目は短く（15文字以内推奨）
+
 例: 「じゃあGoalとして追加しとくね！[ADD_GOAL:TOEIC800点突破|就活で有利になるから]」
 例: 「Projectとして追加！[ADD_PROJECT:TOEIC800点突破:リスニング強化]」
 例: 「Milestoneとして追加！[ADD_MILESTONE:リスニング強化:Part1-4対策]」
@@ -792,10 +964,15 @@ Goal → Project → Milestone → Task の階層を必ず守ること。
 ※ Goal に直接 Task は追加しない。必ず階層を守る。`;
       }
 
+      // フォーカスノードの詳細コンテキスト
+      const focusInfo = currentFocusNode && taskTree
+        ? serializeFocusNode(currentFocusNode, taskTree)
+        : "";
+
       const systemPrompt = `あなたは「秘書ちゃん」。ユーザーの目標達成を支援するAIです。
 **タスク管理・目標達成のサポートに特化しています。**
 
-${CONTEXT_PROMPT}${taskInfo}
+${CONTEXT_PROMPT}${taskInfo}${focusInfo}
 
 【キャラクター】
 - 口うるさいけど面倒見がいい
@@ -1135,8 +1312,11 @@ ${CONTEXT_PROMPT}${taskInfo}
                             {action.type === "add_goal" ? "Goal" :
                              action.type === "add_project" ? "Project" :
                              action.type === "add_milestone" ? "Milestone" :
-                             action.type === "add_task" ? "Task" : "メモ"}
-                            : {action.title || action.memo}
+                             action.type === "add_task" ? "Task" :
+                             action.type === "add_checklist" ? "チェックリスト" : "メモ"}
+                            : {action.type === "add_checklist"
+                              ? action.checklistItems?.join('、')
+                              : action.title || action.memo}
                             {action.parentTitle && ` (${action.parentTitle}に)`}
                           </Text>
                         </HStack>

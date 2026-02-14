@@ -10,6 +10,12 @@ export type TaskPriority = "Low" | "Medium" | "High";
 
 export type TaskDifficulty = "Easy" | "Medium" | "Hard";
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 /**
  * タスクノードの基本インターフェース
  */
@@ -21,6 +27,7 @@ export interface TaskNode {
   startDate?: string;
   endDate?: string;
   children?: TaskNode[];
+  checklist?: ChecklistItem[];
 }
 
 /**

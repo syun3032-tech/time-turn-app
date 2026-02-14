@@ -29,7 +29,6 @@ import type {
   ConversationMessage,
   HearingProgress,
   HearingSummary,
-  UserKnowledge,
   StructuredUserKnowledge,
   ExtractedStructuredKnowledge
 } from './firestore-types'
@@ -694,99 +693,6 @@ export async function linkConversationToGoal(
 }
 
 // ============================================
-// User Knowledge（ユーザー理解のためのナレッジ）
-// ============================================
-
-/**
- * ユーザーナレッジを取得
- */
-export async function getUserKnowledge(userId: string): Promise<UserKnowledge | null> {
-  const docRef = doc(db, 'userKnowledge', userId)
-  const docSnap = await getDoc(docRef)
-
-  if (!docSnap.exists()) return null
-
-  const data = docSnap.data()
-  return {
-    userId,
-    interests: data.interests || [],
-    experiences: data.experiences || [],
-    personality: data.personality || [],
-    challenges: data.challenges || [],
-    goals: data.goals || [],
-    context: data.context || [],
-    updatedAt: toDate(data.updatedAt),
-  }
-}
-
-/**
- * ユーザーナレッジを更新（マージ）
- * 新しい情報を既存の情報にマージする
- */
-export async function updateUserKnowledge(
-  userId: string,
-  newKnowledge: Partial<Omit<UserKnowledge, 'userId' | 'updatedAt'>>
-): Promise<void> {
-  const docRef = doc(db, 'userKnowledge', userId)
-  const existing = await getUserKnowledge(userId)
-
-  // 既存の情報とマージ（重複を除去）
-  const mergeArrays = (existing: string[], newItems: string[]): string[] => {
-    const combined = [...existing, ...newItems]
-    // 重複を除去し、最新の10件に制限
-    return [...new Set(combined)].slice(-10)
-  }
-
-  const mergedData = {
-    interests: mergeArrays(existing?.interests || [], newKnowledge.interests || []),
-    experiences: mergeArrays(existing?.experiences || [], newKnowledge.experiences || []),
-    personality: mergeArrays(existing?.personality || [], newKnowledge.personality || []),
-    challenges: mergeArrays(existing?.challenges || [], newKnowledge.challenges || []),
-    goals: mergeArrays(existing?.goals || [], newKnowledge.goals || []),
-    context: mergeArrays(existing?.context || [], newKnowledge.context || []),
-    updatedAt: serverTimestamp(),
-  }
-
-  await setDoc(docRef, mergedData, { merge: true })
-}
-
-/**
- * ユーザーナレッジをプロンプト用に整形
- */
-export function formatKnowledgeForPrompt(knowledge: UserKnowledge | null): string {
-  if (!knowledge) return ''
-
-  const sections: string[] = []
-
-  if (knowledge.interests.length > 0) {
-    sections.push(`興味・関心: ${knowledge.interests.join('、')}`)
-  }
-  if (knowledge.experiences.length > 0) {
-    sections.push(`経験・スキル: ${knowledge.experiences.join('、')}`)
-  }
-  if (knowledge.personality.length > 0) {
-    sections.push(`性格・特性: ${knowledge.personality.join('、')}`)
-  }
-  if (knowledge.challenges.length > 0) {
-    sections.push(`課題・苦手: ${knowledge.challenges.join('、')}`)
-  }
-  if (knowledge.goals.length > 0) {
-    sections.push(`将来の目標: ${knowledge.goals.join('、')}`)
-  }
-  if (knowledge.context.length > 0) {
-    sections.push(`背景: ${knowledge.context.join('、')}`)
-  }
-
-  if (sections.length === 0) return ''
-
-  return `
-【ユーザーについて知っていること】
-${sections.join('\n')}
-※この情報を踏まえて、パーソナライズされた会話をしてください。
-`
-}
-
-// ============================================
 // Structured User Knowledge（構造化ユーザーナレッジ）
 // ============================================
 
@@ -832,6 +738,11 @@ export async function getStructuredKnowledge(userId: string): Promise<Structured
     lifestyle: data.lifestyle || {},
     emotionalPatterns: data.emotionalPatterns || [],
     recentContext: convertRecentContext(data.recentContext),
+    skills: data.skills || [],
+    personalityTraits: data.personalityTraits || [],
+    struggles: data.struggles || [],
+    concreteGoals: data.concreteGoals || [],
+    preferences: data.preferences || [],
     interests_legacy: data.interests_legacy || [],
     experiences: data.experiences || [],
     personality: data.personality || [],
@@ -893,6 +804,42 @@ export async function updateStructuredKnowledge(
     now
   )
 
+  // スキルのマージ（重複は更新、新規は追加、最大15件）
+  const mergedSkills = mergeSimpleArray(
+    existing?.skills || [],
+    extracted.skills || [],
+    'skill',
+    15
+  )
+
+  // 性格特性のマージ（重複は更新、新規は追加、最大10件）
+  const mergedPersonalityTraits = mergeSimpleArray(
+    existing?.personalityTraits || [],
+    extracted.personalityTraits || [],
+    'trait',
+    10
+  )
+
+  // 課題のマージ（重複は更新、新規は追加、最大10件）
+  const mergedStruggles = mergeSimpleArray(
+    existing?.struggles || [],
+    extracted.struggles || [],
+    'area',
+    10
+  )
+
+  // 具体的目標のマージ（重複は更新、新規は追加、最大10件）
+  const mergedConcreteGoals = mergeConcreteGoals(
+    existing?.concreteGoals || [],
+    extracted.concreteGoals || []
+  )
+
+  // 好みのマージ（矛盾があれば上書き＝最新の発言を優先、最大15件）
+  const mergedPreferences = mergePreferences(
+    existing?.preferences || [],
+    extracted.preferences || []
+  )
+
   const mergedData: Partial<StructuredUserKnowledge> = {
     basicInfo: mergedBasicInfo,
     interests: mergedInterests,
@@ -900,6 +847,11 @@ export async function updateStructuredKnowledge(
     lifestyle: mergedLifestyle,
     emotionalPatterns: mergedEmotionalPatterns,
     recentContext: mergedRecentContext,
+    skills: mergedSkills,
+    personalityTraits: mergedPersonalityTraits,
+    struggles: mergedStruggles,
+    concreteGoals: mergedConcreteGoals,
+    preferences: mergedPreferences,
     updatedAt: now,
   }
 
@@ -1077,11 +1029,105 @@ function mergeRecentContext(
 }
 
 /**
+ * 汎用的な配列マージ（キーフィールドで重複判定）
+ * 同じキーのものは新しい情報で上書き、新規は追加
+ */
+function mergeSimpleArray<T extends Record<string, any>>(
+  existing: T[],
+  newItems: T[],
+  keyField: keyof T,
+  maxItems: number
+): T[] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    const existingIndex = merged.findIndex(e => e[keyField] === newItem[keyField])
+    if (existingIndex >= 0) {
+      // 既存を更新（新しい情報で上書き）
+      merged[existingIndex] = { ...merged[existingIndex], ...newItem }
+    } else {
+      merged.push(newItem)
+    }
+  }
+
+  return merged.slice(-maxItems)
+}
+
+/**
+ * 具体的目標のマージ
+ * 同じ目標は更新、新規は追加、最大10件
+ */
+function mergeConcreteGoals(
+  existing: StructuredUserKnowledge['concreteGoals'],
+  newItems: NonNullable<ExtractedStructuredKnowledge['concreteGoals']>
+): StructuredUserKnowledge['concreteGoals'] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    const existingIndex = merged.findIndex(e => e.goal === newItem.goal)
+    if (existingIndex >= 0) {
+      merged[existingIndex] = {
+        ...merged[existingIndex],
+        deadline: newItem.deadline || merged[existingIndex].deadline,
+      }
+    } else {
+      merged.push({
+        goal: newItem.goal,
+        deadline: newItem.deadline,
+        status: 'active',
+      })
+    }
+  }
+
+  return merged.slice(-10)
+}
+
+/**
+ * 好み・嗜好のマージ
+ * 同じカテゴリ+同じものは最新のsentimentで上書き（矛盾解消）
+ * 最大15件
+ */
+function mergePreferences(
+  existing: StructuredUserKnowledge['preferences'],
+  newItems: NonNullable<ExtractedStructuredKnowledge['preferences']>
+): StructuredUserKnowledge['preferences'] {
+  const merged = [...existing]
+
+  for (const newItem of newItems) {
+    // 同じもの（like）を探す
+    const existingIndex = merged.findIndex(
+      e => e.like === newItem.like
+    )
+    if (existingIndex >= 0) {
+      // sentimentが変わったら上書き（「ぶどう好き→ぶどう嫌い」の矛盾解消）
+      merged[existingIndex] = {
+        category: newItem.category || merged[existingIndex].category,
+        like: newItem.like,
+        sentiment: newItem.sentiment,
+      }
+    } else {
+      merged.push({
+        category: newItem.category,
+        like: newItem.like,
+        sentiment: newItem.sentiment,
+      })
+    }
+  }
+
+  return merged.slice(-15)
+}
+
+/**
  * 従来のUserKnowledgeから構造化ナレッジにマイグレーション
+ * 旧userKnowledgeコレクションから直接読み取り、structuredKnowledgeに変換
  */
 export async function migrateToStructuredKnowledge(userId: string): Promise<void> {
-  const legacy = await getUserKnowledge(userId)
-  if (!legacy) return
+  // 旧コレクションから直接読み取り
+  const legacyRef = doc(db, 'userKnowledge', userId)
+  const legacySnap = await getDoc(legacyRef)
+  if (!legacySnap.exists()) return
+
+  const legacyData = legacySnap.data()
 
   const existingStructured = await getStructuredKnowledge(userId)
   if (existingStructured && existingStructured.interests.length > 0) {
@@ -1092,8 +1138,9 @@ export async function migrateToStructuredKnowledge(userId: string): Promise<void
   const now = new Date()
 
   // 従来の興味を構造化興味に変換
+  const legacyInterests: string[] = legacyData.interests || []
   const structuredInterests: StructuredUserKnowledge['interests'] =
-    (legacy.interests || []).map(topic => ({
+    legacyInterests.map((topic: string) => ({
       topic,
       depth: 'mention' as const,
       firstMentionedAt: now,
@@ -1108,12 +1155,12 @@ export async function migrateToStructuredKnowledge(userId: string): Promise<void
     lifestyle: {},
     emotionalPatterns: [],
     recentContext: [],
-    interests_legacy: legacy.interests,
-    experiences: legacy.experiences,
-    personality: legacy.personality,
-    challenges: legacy.challenges,
-    goals: legacy.goals,
-    context: legacy.context,
+    interests_legacy: legacyData.interests,
+    experiences: legacyData.experiences,
+    personality: legacyData.personality,
+    challenges: legacyData.challenges,
+    goals: legacyData.goals,
+    context: legacyData.context,
     updatedAt: now,
   }
 
