@@ -10,7 +10,7 @@
 // === 利用制限設定 ===
 export const USAGE_LIMITS = {
   // 1日あたりの最大往復回数（βテスト用）
-  DAILY_MESSAGE_LIMIT: 100,
+  DAILY_MESSAGE_LIMIT: 30,
 
   // 制限リセット時刻（日本時間0時）
   RESET_HOUR_JST: 0,
