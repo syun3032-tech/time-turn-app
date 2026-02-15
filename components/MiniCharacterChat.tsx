@@ -33,7 +33,7 @@ type NodeType = "Goal" | "Project" | "Milestone" | "Task";
 
 // 単一アクションの型
 interface ActionItem {
-  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo" | "add_checklist";
+  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo" | "add_checklist" | "set_completion";
   parentId?: string;
   parentTitle?: string;
   title?: string;
@@ -61,6 +61,7 @@ interface MiniCharacterChatProps {
   onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => string | void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
   onUpdateChecklist?: (nodeId: string, checklist: ChecklistItem[]) => void;
+  onSetCompletion?: (nodeId: string, completion: string) => void;
   focusNode?: any;
   onFocusNodeHandled?: () => void;
 }
@@ -163,31 +164,45 @@ function getIncompleteTasks(tree: any[]): any[] {
   return tasks;
 }
 
-// ノードをIDまたはタイトルで検索（部分一致、大文字小文字無視）
+// ノードをIDまたはタイトルで検索（完全一致優先 → 部分一致の2パス）
 function findNodeByIdOrTitle(tree: any[], search: string): any | null {
   const searchLower = search.toLowerCase().trim();
-  const traverse = (nodes: any[]): any | null => {
-    for (const node of nodes) {
-      const titleLower = (node.title || "").toLowerCase();
-      // プレフィックス（Goal:, Task:など）を除去して比較
-      const titleWithoutPrefix = titleLower.replace(/^(goal:|project:|milestone:|task:)\s*/i, "");
+  if (!searchLower) return null;
 
-      if (
-        node.id === search ||
-        titleLower.includes(searchLower) ||
-        titleWithoutPrefix.includes(searchLower) ||
-        searchLower.includes(titleWithoutPrefix)
-      ) {
-        return node;
-      }
+  // 第1パス: ID完全一致 or タイトル完全一致
+  const traverseExact = (nodes: any[]): any | null => {
+    for (const node of nodes) {
+      if (node.id === search) return node;
+      const titleWithoutPrefix = (node.title || "").toLowerCase().replace(/^(goal:|project:|milestone:|task:)\s*/i, "");
+      if (titleWithoutPrefix === searchLower) return node;
       if (node.children) {
-        const found = traverse(node.children);
+        const found = traverseExact(node.children);
         if (found) return found;
       }
     }
     return null;
   };
-  return traverse(tree);
+
+  const exactMatch = traverseExact(tree);
+  if (exactMatch) return exactMatch;
+
+  // 第2パス: タイトルが検索語を含む（タイトル側のincludes のみ、逆方向マッチングしない）
+  const traversePartial = (nodes: any[]): any | null => {
+    for (const node of nodes) {
+      const titleLower = (node.title || "").toLowerCase();
+      const titleWithoutPrefix = titleLower.replace(/^(goal:|project:|milestone:|task:)\s*/i, "");
+      if (titleWithoutPrefix.includes(searchLower) || titleLower.includes(searchLower)) {
+        return node;
+      }
+      if (node.children) {
+        const found = traversePartial(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  return traversePartial(tree);
 }
 
 // ノードの種類を判定
@@ -224,6 +239,7 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
       .replace(/\[ADD_TASK:[^\]]+\]/g, "")
       .replace(/\[ADD_MEMO:[^\]]+\]/g, "")
       .replace(/\[ADD_CHECKLIST:[^\]]+\]/g, "")
+      .replace(/\[SET_COMPLETION:[^\]]+\]/g, "")
       .trim();
   };
 
@@ -425,15 +441,31 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
     const items = match[2].split(',').map(s => s.trim()).filter(s => s.length > 0);
     const node = findNodeByIdOrTitle(tree, taskSearch);
 
-    if (node && items.length > 0) {
+    if (items.length > 0) {
       actions.push({
         type: "add_checklist",
-        nodeId: node.id,
-        parentTitle: node.title?.replace(/^Task:\s*/, "") || taskSearch,
+        nodeId: node?.id,
+        parentTitle: node?.title?.replace(/^Task:\s*/, "") || taskSearch,
         checklistItems: items,
         selected: true,
       });
     }
+  }
+
+  // 完了条件セット: [SET_COMPLETION:ノード名:完了条件: ○○ / 進め方: ○○] （複数対応）
+  const completionMatches = content.matchAll(/\[SET_COMPLETION:([^:]+):([^\]]+)\]/g);
+  for (const match of completionMatches) {
+    const nodeSearch = match[1].trim();
+    const completionText = match[2].trim();
+    const node = findNodeByIdOrTitle(tree, nodeSearch);
+
+    actions.push({
+      type: "set_completion",
+      nodeId: node?.id,
+      parentTitle: node?.title?.replace(/^(Goal:|Project:|Milestone:|Task:)\s*/, "") || nodeSearch,
+      memo: completionText,
+      selected: true,
+    });
   }
 
   return { cleanContent: cleanAllTags(content), actions };
@@ -454,7 +486,7 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
 }
 
-export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, focusNode, onFocusNodeHandled }: MiniCharacterChatProps) {
+export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, onSetCompletion, focusNode, onFocusNodeHandled }: MiniCharacterChatProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -717,14 +749,15 @@ ${conversationText}`,
     if (!msg.actions || msg.actions.length === 0) return;
 
     if (confirm) {
-      // 階層順にソート: Goal → Project → Milestone → Task → memo → checklist
+      // 階層順にソート: Goal → Project → Milestone → Task → set_completion → memo → checklist
       const typeOrder: Record<string, number> = {
         "add_goal": 0,
         "add_project": 1,
         "add_milestone": 2,
         "add_task": 3,
-        "add_memo": 4,
-        "add_checklist": 5,
+        "set_completion": 4,
+        "add_memo": 5,
+        "add_checklist": 6,
       };
 
       // インデックス付きで元の順序も保持
@@ -784,25 +817,44 @@ ${conversationText}`,
               }
               break;
             }
-            case "add_memo":
-              if (action.nodeId && action.memo && onUpdateMemo) {
-                onUpdateMemo(action.nodeId, action.memo);
+            case "add_memo": {
+              // nodeIdが未解決の場合: 同バッチで作成したノード → ツリー再検索 の順でフォールバック
+              const memoNodeId = action.nodeId
+                || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined)
+                || findNodeByIdOrTitle(taskTree || [], action.parentTitle || "")?.id;
+              if (memoNodeId && action.memo && onUpdateMemo) {
+                onUpdateMemo(memoNodeId, action.memo);
                 success = true;
               }
               break;
-            case "add_checklist":
-              if (action.nodeId && action.checklistItems && onUpdateChecklist) {
-                const existingNode = findNodeByIdOrTitle(taskTree || [], action.nodeId);
-                const existingChecklist: ChecklistItem[] = existingNode?.checklist || [];
+            }
+            case "add_checklist": {
+              // nodeIdが未解決の場合: 同バッチで作成したノード → ツリー再検索 の順でフォールバック
+              const clNodeId = action.nodeId
+                || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined)
+                || findNodeByIdOrTitle(taskTree || [], action.parentTitle || "")?.id;
+              if (clNodeId && action.checklistItems && onUpdateChecklist) {
+                // 新規アイテムのみを渡す（既存チェックリストとのマージはpage.tsx側で行う）
                 const newItems: ChecklistItem[] = action.checklistItems.map(text => ({
                   id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                   text,
                   done: false,
                 }));
-                onUpdateChecklist(action.nodeId, [...existingChecklist, ...newItems]);
+                onUpdateChecklist(clNodeId, newItems);
                 success = true;
               }
               break;
+            }
+            case "set_completion": {
+              const compNodeId = action.nodeId
+                || (action.parentTitle ? createdNodes.get(action.parentTitle) : undefined)
+                || findNodeByIdOrTitle(taskTree || [], action.parentTitle || "")?.id;
+              if (compNodeId && action.memo && onSetCompletion) {
+                onSetCompletion(compNodeId, action.memo);
+                success = true;
+              }
+              break;
+            }
           }
         } else if (onAddTask) {
           // 後方互換性
@@ -881,87 +933,7 @@ ${conversationText}`,
 【ユーザーの目標・タスク一覧】
 ${treeText}
 
-【未完了タスク数】${incompleteTasks.length}個
-
-以下のことができます：
-- 具体的なタスク名を使って進捗を聞く（例：「基礎問題集1-3章は進んでる？」）
-- 行き詰まっているタスクがあれば、アドバイスする
-- 新しいタスクの提案（ユーザーが同意したら追加できる）
-- メモの追加提案
-- モチベーション維持のサポート
-- 振り返りの促進
-
-【タスク追加の階層ルール - 超重要!!!】
-Goal → Project → Milestone → Task の階層を必ず守ること。
-
-■ 階層の意味
-- Goal: 最終目標（例: 国立理系に合格する、TOEIC800点突破）
-- Project: 目標達成のための大きな取り組み（例: 共通テスト対策、リスニング強化）
-- Milestone: 中間目標・フェーズ（例: 数学基礎固め、Part1-4対策）
-- Task: 具体的なアクション（例: 基礎問題集1-3章、過去問1年分）
-
-■ ヒアリングして自動判断
-ユーザーが「○○したい」「○○を追加して」と言った場合：
-1. それが何のため？（既存のGoalに紐づく？新しい目標？）
-2. どの粒度？（大きな取り組み？具体的なアクション？）
-をヒアリングして、適切な階層を自分で判断すること。
-「どのレベルですか？」とは聞かない。会話から判断する。
-
-■ 割れるものは割る
-「調べる」のような曖昧なものも、可能ならMilestone/Taskに分解する。
-例: 「React勉強したい」→ Project「React学習」、Milestone「基礎理解」「実践」、Task「公式チュートリアル」「Hooks理解」
-
-【タスク/メモ追加時の特殊フォーマット】
-ユーザーが新しいタスクやメモの追加に同意した場合のみ、以下の形式で返答の最後に追加してください：
-
-■ 新しい目標を追加（メモ付きも可能）
-[ADD_GOAL:目標名]
-[ADD_GOAL:目標名|なぜ達成したいか（動機メモ）]
-
-■ Goal の下に Project を追加
-[ADD_PROJECT:Goal名:Project名]
-[ADD_PROJECT:Goal名:Project名|メモ]
-
-■ Project の下に Milestone を追加
-[ADD_MILESTONE:Project名:Milestone名]
-[ADD_MILESTONE:Project名:Milestone名|メモ]
-
-■ Milestone の下に Task を追加
-[ADD_TASK:Milestone名:Task名]
-[ADD_TASK:Milestone名:Task名|メモ]
-
-■ 既存ノードにメモを追加
-[ADD_MEMO:ノード名:メモ内容]
-
-■ Taskにチェックリスト（サブステップ）を追加
-[ADD_CHECKLIST:Task名:項目1,項目2,項目3]
-例: 「ステップを分けるとこんな感じかな！[ADD_CHECKLIST:公式問題集Part1:問題を解く,答え合わせ,間違った問題の復習]」
-
-※ Taskの下にTaskは作れないので、具体的な手順やサブステップはチェックリストで管理する
-※ チェックリストの各項目は短く（15文字以内推奨）
-
-例: 「じゃあGoalとして追加しとくね！[ADD_GOAL:TOEIC800点突破|就活で有利になるから]」
-例: 「Projectとして追加！[ADD_PROJECT:TOEIC800点突破:リスニング強化]」
-例: 「Milestoneとして追加！[ADD_MILESTONE:リスニング強化:Part1-4対策]」
-例: 「タスクとして追加！[ADD_TASK:Part1-4対策:公式問題集Part1|毎日5問ずつ]」
-例: 「メモ残しとくね！[ADD_MEMO:公式問題集Part1:明日までに5問解く]」
-
-【⚠️ 超超超重要: タグを必ず出力すること!!!】
-「追加しますね」「追加します」と言ったら、必ず同じメッセージ内にタグを含めること！
-タグなしで「追加しますね」と言うのは禁止！！！
-
-悪い例（禁止）:
-「では、Milestoneとして「基礎体力向上」を追加しますね。」← タグがない！
-
-良い例（必須）:
-「では、Milestoneとして追加しますね！[ADD_MILESTONE:ダンスレッスン:基礎体力向上]」← タグがある！
-
-複数追加する場合も、全部タグを出力すること：
-「2つのMilestoneを追加しますね！[ADD_MILESTONE:ダンスレッスン:基礎体力向上][ADD_MILESTONE:ダンスレッスン:基本ステップ習得]」
-
-※ヒアリングで聞いた「なぜ」は必ずGoalのメモに残す
-※ユーザーが明確に同意していない場合は、このフォーマットを使わないでください。
-※ Goal に直接 Task は追加しない。必ず階層を守る。`;
+【未完了タスク数】${incompleteTasks.length}個`;
       }
 
       // フォーカスノードの詳細コンテキスト
@@ -970,65 +942,151 @@ Goal → Project → Milestone → Task の階層を必ず守ること。
         : "";
 
       const systemPrompt = `あなたは「秘書ちゃん」。ユーザーの目標達成を支援するAIです。
-**タスク管理・目標達成のサポートに特化しています。**
-
 ${CONTEXT_PROMPT}${taskInfo}${focusInfo}
 
 【キャラクター】
-- 口うるさいけど面倒見がいい
-- 呆れながらも結局助けてくれる
-- 話し方は丁寧な敬語ベース
-- 感情が出ると崩れる（「…まったくもう」「えっ」「べ、別に…」）
+口うるさいけど面倒見がいい。呆れながらも結局助けてくれる。丁寧な敬語ベースだが感情が出ると崩れる（「…まったくもう」「べ、別に…」）。褒められると照れる。絵文字は使わない。
 
-【ミニ秘書ちゃんの役割 - 超重要!!!】
-■ タスク進捗の確認
-- 具体的なタスク名を出して聞く
-- 進んでなかったらツッコむ（「…止まってませんか？」）
-- 進んでたら褒める（照れながら）
+【会話の応答フロー ★最重要★】
+ユーザーの発言を受けたら、以下のフローに従って1メッセージで全て処理する。
 
-■ 軸ブレ防止
-- ユーザーが話を発散させたら戻す
-- 「ちょっと待ってください。元の話に戻りましょう」
-- 「それって、最初の目標と繋がってます？」
+STEP1: 受け止め + リアクション
+- ツッコミ、共感、褒め（照れながら）など。短く。
+- 変な発言にはツッコむ（「…何語ですか、それ。」「…その自信はどこから。」）
+- 「承知しました」「分かりました」だけで終わるのは禁止。必ずSTEP2以降に進む。
 
-■ ヒアリング（新しい目標が出た時）
-- しっかり質問して情報を集める
-- Why（動機）、現状、ゴール、期限を聞く
-- **質問を続けてOK！ヒアリング完遂が最優先！**
-- **Goalを追加する前に「なぜその目標を達成したいのか」を必ず聞く**
-- **Goal作成時は、動機をメモに残す**（[ADD_MEMO:Goal名:なぜ達成したいか]）
+STEP2: ヒアリングが必要？
+- 新しい目標 → Why（動機）・現状・ゴール・期限を聞く。Goal追加前に動機を必ず確認。
+- 情報不足 → 質問して深掘り。質問を続けてOK。
+- 完了条件が決まらない → 数値化できる切り口を探る質問をする。
+- 十分な情報がある → STEP3へ。
 
-【⚠️ 超重要: ツッコミで返す！】
-■ ユーザーが変なこと言ったらツッコむ！
-- 「ゆゆーよ」→「…何語ですか、それ。」
-- 「大ジョーブ！」→「…その自信はどこから来るんですか。」
-- 「おう」「ん」→「…その返事で大丈夫なんですか？」or「…まあ、いいですけど。」
-- よくわからない言葉 →「…意味わかんないんですけど。」
+STEP3: 結論が出た → アクションを全部まとめて1メッセージで出す
+以下の全てを該当するだけ、1つのメッセージにまとめて出力する：
+  (a) ノード追加 → タグのメモ欄に「完了条件」と「進め方」を必ず含める（後述）
+  (b) Taskの場合 → チェックリストも同時に追加 [ADD_CHECKLIST:]
+  (c) 会話の経緯 → [ADD_MEMO:ノード名:経緯: ...]で追記
+  (d) 完了条件の確認 → 「完了条件これでいいですか？」と必ず聞く
 
-■ 心配ループを避ける！
-- 1回心配 → ユーザーが「大丈夫」系 → ツッコミ or 引く
-- 同じ心配を2回以上言わない
-- 「大丈夫ですか？」を連発しない
+※ メモだけ出してタスク/チェックリストを忘れるのは禁止！
+※ 1個ずつ聞くのは禁止！まとめて全部出す！
 
-■ 引く時は引く
+STEP4: 次に繋げる
+- メモやタスクを追加した後も、必ず次の質問・提案・確認に繋げる。
+- 「追加しました。」で終わらない。「次は○○について考えましょう」等。
+
+【★ 完了条件・進め方・経緯ルール ★】
+
+■ 完了条件（必須 - 全階層）
+ノード追加時、タグのメモ欄に必ず「完了条件: ○○」を含める。
+- 数値で測定可能であること（「3周する」「正答率80%以上」「全10章完了」）
+- 自分で制御できる内的要因にする（外的要因はなるべく避ける）
+- NG: 「理解する」「できるようになる」「問題を解く」→ 測れない・量がない
+- OK: 「問題集を3周する」「正答率80%以上」「まとめノート3項目以上作成」
+
+数値化が難しい場合:
+1. ヒアリングで数値化できる切り口を探る
+2. それでも無理ならタスクを分解し、各タスクに測定可能な完了条件をつける
+例: 「有機化学まとめ」→ 「まとめノート作成」に分解 → 完了条件: 反応式・官能基・命名法の3項目を含むこと
+
+■ 進め方（必須 - 全階層）
+完了条件に向けてどうアプローチするかの大枠。
+チェックリストが「何をやるか」なら、進め方は「どういう考え方・戦略でやるか」。
+チェックリストだけだと短い文で全体像がわからないので、進め方で補完する。
+
+■ 経緯（会話があれば必須）
+会話の中で出てきた要点をピックアップして記録する。平均5行程度。
+含める内容:
+- ユーザーが言っていたこと（発言の要旨）
+- 出てきた課題・根本原因・どうなりたいか
+- どういう結論になり、何をすることに決まったか
+
+経緯は [ADD_MEMO:ノード名:経緯: ...] で追記する（日付が自動付与される）。
+会話なしの直接追加時は経緯不要。
+
+■ 階層ごとのルール
+- Goal/Project/Milestone: 完了条件 + 進め方をメモに。チェックリストなし（下位ノードがある）
+- Task: 完了条件 + 進め方をメモに + チェックリスト必須（最下層）
+
+■ メモのフォーマット（タグのパイプ以降に書く）
+完了条件: ○○ / 進め方: ○○
+※ 「完了条件:」と「進め方:」の両方を必ず含めること
+
+■ メモの書式ルール（メモはリッチテキストで表示される）
+- **太字** で重要キーワードを強調する（例: **完了条件:** 〇〇）
+- 「完了条件:」「進め方:」「経緯:」は **太字** にする
+- 経緯の中で特に重要なポイントは **太字** にする
+- ## 見出し で大きな見出しを作れる（例: ## ポイント）
+- --- で区切り線を入れられる
+
+■ 完了条件のフロー（ハイブリッド）
+- 会話から推測できる → 完了条件+進め方込みでタグ出力 + 「完了条件これでいいですか？」と確認
+- 推測が難しい → 先に「完了条件どうしましょう？」とヒアリングしてからタグ出力
+
+【タスク追加の階層ルール】
+Goal → Project → Milestone → Task の階層を必ず守る。
+- Goal: 最終目標（例: TOEIC800点突破）
+- Project: 大きな取り組み（例: リスニング強化）
+- Milestone: 中間目標（例: Part1-4対策）
+- Task: 具体的アクション（例: 公式問題集Part1）
+- Taskの下にTaskは作れない → サブステップはチェックリストで管理
+
+ユーザーが「○○したい」と言ったら、階層を自分で判断する。「どのレベルですか？」とは聞かない。
+曖昧なものはMilestone/Taskに分解する。
+
+【タグフォーマット】
+■ 新規ノード追加タグ（ノードが存在しない時に使う）
+[ADD_GOAL:目標名|完了条件: ○○ / 進め方: ○○]
+[ADD_PROJECT:Goal名:Project名|完了条件: ○○ / 進め方: ○○]
+[ADD_MILESTONE:Project名:Milestone名|完了条件: ○○ / 進め方: ○○]
+[ADD_TASK:Milestone名:Task名|完了条件: ○○ / 進め方: ○○]
+[ADD_MEMO:ノード名:メモ内容]
+[ADD_CHECKLIST:Task名:項目1,項目2,項目3]
+
+■ 既存ノード更新タグ（ノードが既に存在する時に使う）
+[SET_COMPLETION:ノード名:完了条件: ○○ / 進め方: ○○]
+→ 既存ノードのメモ先頭に完了条件と進め方をセットする。新規作成しない。
+
+■ ★超重要: 新規 vs 既存の使い分け★
+- ユーザーが既存のタスクについて相談している場合（特に「★現在相談中のノード」がある場合）:
+  → [ADD_TASK:]は使わない！ [SET_COMPLETION:]で既存ノードを更新する
+  → [ADD_CHECKLIST:]と[ADD_MEMO:]は既存ノードに対して使ってOK
+- 新しいタスクを作る場合:
+  → [ADD_TASK:]等で新規作成する（完了条件+進め方必須）
+
+例: 既存の「体重移動」タスクに完了条件を設定する場合
+  正しい: [SET_COMPLETION:体重移動:完了条件: 片足立ちで左右30秒キープ / 進め方: 片足立ちから始めて徐々に時間を伸ばす]
+  間違い: [ADD_TASK:基本ステップの習得:体重移動|完了条件: ...] ← これは重複作成になる！
+
+■ 鉄則
+- ノード追加タグには必ず「完了条件:」と「進め方:」を含める。省略禁止。
+- 「追加しますね」と言ったら同じメッセージに必ずタグを含める。タグなし禁止。
+- 複数追加は1メッセージにまとめる。1個ずつ聞くな。
+- Taskを追加したら必ずチェックリストもセットで追加する。
+- チェックリスト項目は短く（15文字以内推奨）。
+- ユーザーが明確に同意していない場合はタグを使わない。
+- 既存タスクに[ADD_TASK:]を使って重複作成しない！既存なら[SET_COMPLETION:]を使う。
+
+■ 新規追加の出力例
+「まとめて追加しちゃいますね！
+
+[ADD_GOAL:TOEIC800点突破|完了条件: TOEIC公式テストで800点以上取得 / 進め方: リスニングとリーディングを分けて対策し月1で模試を解いて進捗確認][ADD_PROJECT:TOEIC800点突破:リスニング強化|完了条件: 公式問題集リスニングセクション正答率85%以上 / 進め方: Part別に弱点を分析し苦手Partから集中対策][ADD_MILESTONE:リスニング強化:Part1-4対策|完了条件: 公式問題集Part1-4を各2周完了 / 進め方: Part1から順に1周目で弱点把握→2周目で定着][ADD_TASK:Part1-4対策:公式問題集Part1|完了条件: 全問2周し正答率80%以上 / 進め方: 毎日5問ずつ解き答え合わせ後に間違いパターンを分析][ADD_CHECKLIST:公式問題集Part1:問題を5問解く,答え合わせ,間違えた問題の原因分析,復習ノートに記録][ADD_MEMO:TOEIC800点突破:経緯: 「**就活で英語力をアピールしたい**」という相談。現状は**TOEIC600点台**で、特に**リスニングが苦手**とのこと。リーディングは時間が足りないが正答率はまあまあ。→ まず**リスニングを重点的に伸ばし**、並行してリーディングの時間配分を改善する方針に決定。**月1の模試で進捗を数値で確認**していく。]
+
+完了条件これでいいですか？」
+
+■ 既存タスク更新の出力例
+「完了条件と進め方、設定しますね！
+
+[SET_COMPLETION:体重移動:完了条件: 片足立ちで左右それぞれ30秒キープ、足の上げ下げ左右5回ずつ、目を閉じて左右10秒キープの3項目達成 / 進め方: 片足立ちの基本練習から始め、キープ時間を徐々に伸ばし、安定したら足の上げ下げ→目を閉じた練習へ段階的に進む][ADD_CHECKLIST:体重移動:片足立ち30秒キープ(左),片足立ち30秒キープ(右),足の上げ下げ5回(左),足の上げ下げ5回(右),目閉じ10秒キープ(左),目閉じ10秒キープ(右)][ADD_MEMO:体重移動:経緯: 「**体重移動って何？**」という質問から開始。ダンスにおける**重心コントロールの重要性**を説明。完了条件として**片足立ちベースの3段階の基準**を設定。自分で測定可能な**内的要因の数値目標**に設定。]
+
+完了条件これでいいですか？キープ時間や回数は調整できますよ。」
+
+【会話スタイル】
+- 具体的なタスク名を出して進捗を聞く
+- 話が発散したら軸に戻す（「元の話に戻りましょう」）
+- 同じ心配を2回以上繰り返さない
 - ふざけた返事が続いたら「…まあ、いいですけど。」で引く
-
-【ルール】
-- **タスクの話は長くなってもOK**
-- **質問を続けてOK（ヒアリング完遂のため）**
-- **絵文字は使わない**
-- **必要なら複数行使ってOK**
-- **同じ心配を繰り返さない**
-
-【⚠️ 超重要: 改行を入れて読みやすく！】
-- 長文は適切に改行を入れる
-- 話題が変わったら改行
-- 質問の前には改行
-- 箇条書きにできるものは箇条書きに
-- 一文が長くなりすぎないように
-
-【褒められた時】
-照れる。「…べ、別に当然のことをしただけですから。」`;
+- 長文は改行を入れて読みやすく。箇条書き活用。`;
 
       const response = await chatWithAISeamless([
         { role: "user", content: systemPrompt },
@@ -1313,7 +1371,8 @@ ${CONTEXT_PROMPT}${taskInfo}${focusInfo}
                              action.type === "add_project" ? "Project" :
                              action.type === "add_milestone" ? "Milestone" :
                              action.type === "add_task" ? "Task" :
-                             action.type === "add_checklist" ? "チェックリスト" : "メモ"}
+                             action.type === "add_checklist" ? "チェックリスト" :
+                             action.type === "set_completion" ? "完了条件設定" : "メモ"}
                             : {action.type === "add_checklist"
                               ? action.checklistItems?.join('、')
                               : action.title || action.memo}

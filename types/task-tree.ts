@@ -24,6 +24,7 @@ export interface TaskNode {
   title: string;
   type?: NodeType;
   description?: string;
+  memo?: string;
   startDate?: string;
   endDate?: string;
   children?: TaskNode[];

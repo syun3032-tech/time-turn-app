@@ -68,3 +68,137 @@ a {
 .mini-character.face-left {
   transform: scaleX(1);
 }
+
+/* Tiptap リッチテキストエディタ */
+.tiptap-editor .tiptap {
+  outline: none;
+  min-height: 200px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #1a202c;
+}
+
+.tiptap-editor .tiptap p {
+  margin: 0.25em 0;
+}
+
+.tiptap-editor .tiptap h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.4em 0 0.2em;
+  color: #1a202c;
+}
+
+.tiptap-editor .tiptap h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+  color: #1a202c;
+}
+
+.tiptap-editor .tiptap h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.3em 0 0.15em;
+  color: #2d3748;
+}
+
+.tiptap-editor .tiptap u {
+  text-decoration: underline;
+}
+
+.tiptap-editor .tiptap strong {
+  font-weight: 700;
+}
+
+.tiptap-editor .tiptap em {
+  font-style: italic;
+}
+
+.tiptap-editor .tiptap s {
+  text-decoration: line-through;
+}
+
+.tiptap-editor .tiptap hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.8em 0;
+}
+
+.tiptap-editor .tiptap ul,
+.tiptap-editor .tiptap ol {
+  padding-left: 1.2em;
+  margin: 0.3em 0;
+}
+
+.tiptap-editor .tiptap li {
+  margin: 0.15em 0;
+}
+
+.tiptap-editor .tiptap p.is-editor-empty:first-child::before {
+  color: #a0aec0;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* メモプレビュー用HTML表示 */
+.memo-preview h1 {
+  font-size: 1.3em;
+  font-weight: 700;
+  margin: 0.2em 0;
+}
+
+.memo-preview h2 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 0.2em 0;
+}
+
+.memo-preview h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.15em 0;
+}
+
+.memo-preview p {
+  margin: 0.15em 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #4a5568;
+}
+
+.memo-preview strong {
+  font-weight: 700;
+  color: #1a202c;
+}
+
+.memo-preview em {
+  font-style: italic;
+}
+
+.memo-preview u {
+  text-decoration: underline;
+}
+
+.memo-preview s {
+  text-decoration: line-through;
+}
+
+.memo-preview hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.5em 0;
+}
+
+.memo-preview ul, .memo-preview ol {
+  padding-left: 1.2em;
+  margin: 0.2em 0;
+  font-size: 14px;
+  color: #4a5568;
+}
+
+.memo-preview li {
+  margin: 0.1em 0;
+}

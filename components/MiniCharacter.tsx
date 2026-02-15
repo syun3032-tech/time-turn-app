@@ -18,12 +18,13 @@ interface MiniCharacterProps {
   onAddNode?: (parentId: string | null, title: string, nodeType: NodeType, memo?: string) => string | void;
   onUpdateMemo?: (nodeId: string, memo: string) => void;
   onUpdateChecklist?: (nodeId: string, checklist: ChecklistItem[]) => void;
+  onSetCompletion?: (nodeId: string, completion: string) => void;
   focusNode?: any;
   onFocusNodeHandled?: () => void;
   chatOpenRef?: React.MutableRefObject<(() => void) | null>;
 }
 
-export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, focusNode, onFocusNodeHandled, chatOpenRef }: MiniCharacterProps) {
+export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, onSetCompletion, focusNode, onFocusNodeHandled, chatOpenRef }: MiniCharacterProps) {
   const [position, setPosition] = useState({ x: 30, y: 150 });
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -449,6 +450,7 @@ export function MiniCharacter({ onChatOpenChange, taskTree, onAddTask, onAddNode
         onAddNode={onAddNode}
         onUpdateMemo={onUpdateMemo}
         onUpdateChecklist={onUpdateChecklist}
+        onSetCompletion={onSetCompletion}
         focusNode={focusNode}
         onFocusNodeHandled={onFocusNodeHandled}
       />

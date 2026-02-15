@@ -3,8 +3,8 @@
 import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input, Textarea } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
 import { MiniCharacter } from "@/components/MiniCharacter";
-import { useState, useRef, useEffect, Suspense } from "react";
-import { FiCalendar, FiX } from "react-icons/fi";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { FiCalendar, FiX, FiRotateCcw, FiRotateCw, FiCheck } from "react-icons/fi";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { getTaskTreeAsync, saveTaskTreeAsync } from "@/lib/task-tree-storage";
@@ -13,6 +13,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { saveCompletedTask, deleteCompletedTaskByTaskId } from "@/lib/firebase/firestore";
 import { TaskNode, ChecklistItem } from "@/types/task-tree";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import dynamic from "next/dynamic";
+import { textToHtml } from "@/lib/memo-utils";
+
+const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
+  ssr: false,
+  loading: () => <Box p={4}><Text fontSize="sm" color="gray.400">読み込み中...</Text></Box>,
+});
 
 const initialTreeBackup = [
   {
@@ -815,6 +822,9 @@ function TasksPageContent() {
   const [detailMemoText, setDetailMemoText] = useState("");
   const [detailEndDate, setDetailEndDate] = useState<Date | null>(null);
   const [detailSection, setDetailSection] = useState<"all" | "subtask">("all");
+  const [isMemoExpanded, setIsMemoExpanded] = useState(false);
+  const [memoEditor, setMemoEditor] = useState<any>(null);
+  const [, setEditorTick] = useState(0); // エディタ状態変更時の再描画用
 
   // AIと相談用state
   const [chatFocusNode, setChatFocusNode] = useState<any>(null);
@@ -915,6 +925,7 @@ function TasksPageContent() {
     setDetailMemoText(node.memo || "");
     setDetailEndDate(node.endDate ? new Date(node.endDate) : null);
     setDetailSection(section);
+    setIsMemoExpanded(false);
   };
 
   const handleSaveDetail = () => {
@@ -942,7 +953,7 @@ function TasksPageContent() {
       });
     };
 
-    setTree(updateTree(tree));
+    setTree(prev => updateTree(prev));
     setDetailNode(null);
   };
 
@@ -1023,10 +1034,19 @@ function TasksPageContent() {
   };
 
   const handleUpdateMemo = (nodeId: string, memo: string) => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}`;
+    const memoHtml = textToHtml(memo);
+    const dateHtml = `<p style="color:#a0aec0;font-size:12px">[${dateStr}]</p>`;
     const updateTree = (nodes: any[]): any[] => {
       return nodes.map((n) => {
         if (n.id === nodeId) {
-          return { ...n, memo };
+          const existing = n.memo || "";
+          const existingHtml = textToHtml(existing);
+          const newMemo = existingHtml
+            ? `${existingHtml}<hr>${dateHtml}${memoHtml}`
+            : `${dateHtml}${memoHtml}`;
+          return { ...n, memo: newMemo };
         }
         if (n.children) {
           return { ...n, children: updateTree(n.children) };
@@ -1034,7 +1054,7 @@ function TasksPageContent() {
         return n;
       });
     };
-    setTree(updateTree(tree));
+    setTree(prev => updateTree(prev));
   };
 
   const handleUpdateChecklist = (nodeId: string, checklist: ChecklistItem[]) => {
@@ -1049,7 +1069,37 @@ function TasksPageContent() {
         return n;
       });
     };
-    setTree(updateTree(tree));
+    setTree(prev => updateTree(prev));
+  };
+
+  // 既存ノードの完了条件・進め方をメモの先頭にセット
+  const handleSetCompletion = (nodeId: string, completion: string) => {
+    const completionHtml = textToHtml(completion);
+    setTree(prev => {
+      const updateNodes = (nodes: any[]): any[] => {
+        return nodes.map((n) => {
+          if (n.id === nodeId) {
+            const existing = n.memo || "";
+            const existingHtml = textToHtml(existing);
+            // 既存HTMLから完了条件・進め方のパラグラフを除去（重複防止）
+            const cleaned = existingHtml
+              .replace(/<p[^>]*>完了条件:.*?<\/p>/g, "")
+              .replace(/<p[^>]*>進め方:.*?<\/p>/g, "")
+              .trim();
+            // 完了条件を先頭に、既存メモをその下に配置
+            const newMemo = cleaned
+              ? `${completionHtml}${cleaned}`
+              : completionHtml;
+            return { ...n, memo: newMemo };
+          }
+          if (n.children) {
+            return { ...n, children: updateNodes(n.children) };
+          }
+          return n;
+        });
+      };
+      return updateNodes(prev);
+    });
   };
 
   const handleRestoreTask = async (nodeId: string) => {
@@ -1162,7 +1212,7 @@ function TasksPageContent() {
             title: `${nodeType}: ${title}`,
             type: nodeType,
             children: nodeType === "Task" ? undefined : [],
-            memo: memo || undefined,
+            memo: memo ? textToHtml(memo) : undefined,
           };
 
           if (nodeType === "Task") {
@@ -1257,7 +1307,24 @@ function TasksPageContent() {
           return newNode.id;
         }}
         onUpdateMemo={handleUpdateMemo}
-        onUpdateChecklist={handleUpdateChecklist}
+        onUpdateChecklist={(nodeId, newItems) => {
+          // Append mode: merge new items with existing checklist using latest state
+          setTree(prev => {
+            const updateNodes = (nodes: any[]): any[] => {
+              return nodes.map((n) => {
+                if (n.id === nodeId) {
+                  return { ...n, checklist: [...(n.checklist || []), ...newItems] };
+                }
+                if (n.children) {
+                  return { ...n, children: updateNodes(n.children) };
+                }
+                return n;
+              });
+            };
+            return updateNodes(prev);
+          });
+        }}
+        onSetCompletion={handleSetCompletion}
         focusNode={chatFocusNode}
         onFocusNodeHandled={() => setChatFocusNode(null)}
         chatOpenRef={chatOpenRef}
@@ -1298,28 +1365,141 @@ function TasksPageContent() {
                   </Box>
                 )}
 
-                {/* メモ編集（allモードのみ） */}
+                {/* メモ（allモードのみ） */}
                 {detailSection === "all" && (
                   <>
                     <Box py={3}>
-                      <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={2} textTransform="uppercase" letterSpacing="wide">メモ</Text>
-                      <Textarea
-                        placeholder="メモを入力..."
-                        value={detailMemoText}
-                        onChange={(e) => setDetailMemoText(e.target.value)}
-                        size="sm"
+                      <HStack justify="space-between" mb={2}>
+                        <Text fontSize="xs" fontWeight="bold" color="gray.500" textTransform="uppercase" letterSpacing="wide">メモ</Text>
+                        <Box
+                          as="button"
+                          fontSize="xs"
+                          color="teal.500"
+                          fontWeight="bold"
+                          onClick={() => setIsMemoExpanded(true)}
+                          _hover={{ color: "teal.600" }}
+                        >
+                          {detailMemoText ? "全画面で編集" : "メモを追加"}
+                        </Box>
+                      </HStack>
+                      <Box
                         bg="gray.50"
-                        color="gray.800"
-                        _placeholder={{ color: "gray.400" }}
-                        rows={3}
-                        resize="vertical"
-                        borderColor="gray.200"
                         borderRadius="lg"
-                        _focus={{ borderColor: "teal.400", bg: "white" }}
-                      />
+                        border="1px solid"
+                        borderColor="gray.200"
+                        p={3}
+                        maxH="120px"
+                        overflow="auto"
+                        onClick={() => setIsMemoExpanded(true)}
+                        cursor="pointer"
+                        _hover={{ borderColor: "teal.300" }}
+                        transition="all 0.2s"
+                      >
+                        {detailMemoText ? (
+                          <Box
+                            className="memo-preview"
+                            dangerouslySetInnerHTML={{ __html: textToHtml(detailMemoText) }}
+                          />
+                        ) : (
+                          <Text fontSize="sm" color="gray.400">
+                            タップしてメモを入力...
+                          </Text>
+                        )}
+                      </Box>
                     </Box>
                     <Box h="1px" bg="gray.100" />
                   </>
+                )}
+
+                {/* メモ展開オーバーレイ（iPhoneメモ風エディタ） */}
+                {isMemoExpanded && (
+                  <Box
+                    position="fixed"
+                    top={0}
+                    left={0}
+                    w="100vw"
+                    h="100vh"
+                    bg="white"
+                    zIndex={1100}
+                    display="flex"
+                    flexDirection="column"
+                  >
+                    <Box bg="teal.500" px={3} py={2.5} flexShrink={0}>
+                      <HStack justify="space-between">
+                        {/* 左: 閉じる */}
+                        <Box
+                          as="button"
+                          color="white"
+                          onClick={() => { setIsMemoExpanded(false); setMemoEditor(null); }}
+                          p={1}
+                          _hover={{ bg: "whiteAlpha.200" }}
+                          borderRadius="md"
+                        >
+                          <FiX size={20} />
+                        </Box>
+
+                        {/* 中央: Undo / Redo */}
+                        <HStack gap={1}>
+                          <Box
+                            as="button"
+                            color={memoEditor?.can().undo() ? "white" : "whiteAlpha.400"}
+                            onClick={() => memoEditor?.chain().focus().undo().run()}
+                            p={1.5}
+                            _hover={{ bg: "whiteAlpha.200" }}
+                            borderRadius="md"
+                            opacity={memoEditor?.can().undo() ? 1 : 0.4}
+                          >
+                            <FiRotateCcw size={18} />
+                          </Box>
+                          <Box
+                            as="button"
+                            color={memoEditor?.can().redo() ? "white" : "whiteAlpha.400"}
+                            onClick={() => memoEditor?.chain().focus().redo().run()}
+                            p={1.5}
+                            _hover={{ bg: "whiteAlpha.200" }}
+                            borderRadius="md"
+                            opacity={memoEditor?.can().redo() ? 1 : 0.4}
+                          >
+                            <FiRotateCw size={18} />
+                          </Box>
+                        </HStack>
+
+                        {/* 右: 保存 */}
+                        <Box
+                          as="button"
+                          color="white"
+                          bg="whiteAlpha.200"
+                          onClick={() => {
+                            handleSaveDetail();
+                            setIsMemoExpanded(false);
+                            setMemoEditor(null);
+                          }}
+                          px={3}
+                          py={1}
+                          _hover={{ bg: "whiteAlpha.300" }}
+                          borderRadius="md"
+                          fontSize="sm"
+                          fontWeight="bold"
+                        >
+                          <HStack gap={1}>
+                            <FiCheck size={16} />
+                            <Text>保存</Text>
+                          </HStack>
+                        </Box>
+                      </HStack>
+                    </Box>
+                    <Box flex={1} overflow="hidden" display="flex" flexDirection="column" p={3}>
+                      <RichTextEditor
+                        content={textToHtml(detailMemoText)}
+                        onChange={(html) => setDetailMemoText(html)}
+                        onEditorReady={(editor) => {
+                          setMemoEditor(editor);
+                          editor.on("transaction", () => setEditorTick(t => t + 1));
+                        }}
+                        placeholder="メモを入力..."
+                      />
+                    </Box>
+                  </Box>
                 )}
 
                 {/* サブタスク（Taskノードのみ） */}
