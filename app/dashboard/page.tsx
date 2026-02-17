@@ -1343,7 +1343,7 @@ ${conversationText}`,
           <Box
             position="relative"
             ml={4}
-            h="min(460px, 50vh)"
+            h="min(480px, 53vh)"
             overflow="hidden"
           >
             <Box>
