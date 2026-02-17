@@ -904,6 +904,10 @@ ${conversationText}`,
       try {
         convId = await createConversation(user.uid, '新しいチャット', 'mini');
         setConversationId(convId);
+        // 初回挨拶（既存メッセージ）をFirestoreに保存
+        for (const msg of messages) {
+          await addMessageToConversation(convId, msg.role, msg.content);
+        }
       } catch (error) {
         console.error("Failed to create conversation:", error);
       }
@@ -1506,6 +1510,7 @@ Goal → Project → Milestone → Task の階層を必ず守る。
           zIndex={998}
           onClick={onClose}
           bg={{ base: "blackAlpha.500", md: "transparent" }}
+          pointerEvents={{ base: "auto", md: "none" }}
         />
       )}
 

@@ -121,6 +121,9 @@ export async function POST(request: NextRequest) {
           generationConfig: {
             temperature: 0.7,
             maxOutputTokens: 2000,
+            thinkingConfig: {
+              thinkingBudget: 512,
+            },
           },
         }),
         signal: controller.signal,

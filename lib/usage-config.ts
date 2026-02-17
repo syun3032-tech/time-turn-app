@@ -27,15 +27,15 @@ export const COST_REFERENCE = {
     OUTPUT: 1000,
   },
 
-  // 料金（USD per 1M tokens）
+  // 料金（USD per 1M tokens）- 2026-02時点の公式価格
   PRICE_PER_MILLION_TOKENS: {
-    INPUT: 0.15,
-    OUTPUT: 0.60,
+    INPUT: 0.30,
+    OUTPUT: 2.50, // thinking tokens含む
   },
 
-  // 1日40往復の推定コスト
-  ESTIMATED_DAILY_COST_YEN: 5, // 約5円/日
-  ESTIMATED_MONTHLY_COST_YEN: 150, // 約150円/月（毎日MAX利用時）
+  // thinkingBudget: 512 適用時の推定コスト
+  ESTIMATED_DAILY_COST_YEN: 13, // 約13円/日（30往復）
+  ESTIMATED_MONTHLY_COST_YEN: 401, // 約401円/月（毎日MAX利用時）
 } as const;
 
 // === ヘルパー関数 ===
