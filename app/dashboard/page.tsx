@@ -11,13 +11,12 @@ import { getTaskTreeAsync, saveTaskTreeAsync, serializeTreeForAI, addNodeToTree,
 import { TaskNode } from "@/types/task-tree";
 import { getHearingPrompt, getHearingCompletePrompt, getTaskOutputPrompt, getInterestStagePrompt, getChatModePrompt, getGreetingPrompt, type StructuredUserKnowledgeForPrompt } from "@/lib/prompts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserProfile, createUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getStructuredKnowledge, updateStructuredKnowledge, migrateToStructuredKnowledge, type UsageData } from "@/lib/firebase/firestore";
+import { getUserProfile, updateUserProfile, getUserUsage, incrementUsage, checkUsageLimit, updateLoginStreak, createConversation, getConversations, getConversationMessages, addMessageToConversation, updateConversationTitle, updateConversationHearingState, deleteConversation, getStructuredKnowledge, updateStructuredKnowledge, migrateToStructuredKnowledge, type UsageData } from "@/lib/firebase/firestore";
 import { extractStructuredKnowledge, shouldExtractStructuredKnowledge } from "@/lib/knowledge-extractor";
 import type { StructuredUserKnowledge } from "@/lib/firebase/firestore-types";
 import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
-import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { InstallPrompt } from "@/components/InstallPrompt";
@@ -95,7 +94,6 @@ export default function DashboardPage() {
 
   // プロフィール関連
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
 
@@ -163,13 +161,15 @@ export default function DashboardPage() {
         const profile = await getUserProfile(user.uid);
         if (profile) {
           setUserProfile(profile);
-          // プロフィール未完了なら設定モーダルを表示
+          // プロフィール未完了ならオンボーディングへ
           if (!profile.profileCompleted) {
-            setShowProfileSetup(true);
+            router.push('/onboarding');
+            return;
           }
         } else {
-          // プロフィールが存在しない場合は初回設定モーダルを表示
-          setShowProfileSetup(true);
+          // プロフィールが存在しない場合はオンボーディングへ
+          router.push('/onboarding');
+          return;
         }
       } catch (error) {
         console.error("Failed to load profile:", error);
@@ -713,39 +713,6 @@ ${conversationText}`,
       router.push('/login');
     } catch (error) {
       console.error("Failed to sign out:", error);
-    }
-  };
-
-  // 初回プロフィール設定完了
-  const handleProfileSetupComplete = async (data: { nickname: string; occupation: string }) => {
-    if (!user) return;
-
-    try {
-      if (userProfile) {
-        // 既存プロフィールを更新
-        await updateUserProfile(user.uid, {
-          nickname: data.nickname,
-          occupation: data.occupation,
-          profileCompleted: true,
-        });
-      } else {
-        // 新規プロフィール作成
-        await createUserProfile(user.uid, user.email || "", {
-          nickname: data.nickname,
-          occupation: data.occupation,
-          profileCompleted: true,
-        });
-      }
-
-      // ローカル状態を更新
-      const updatedProfile = await getUserProfile(user.uid);
-      setUserProfile(updatedProfile);
-      setShowProfileSetup(false);
-
-      // 歓迎メッセージ
-      setCharacterMessage(`${data.nickname}さん、よろしくね！今日はどのタスクから行く？`);
-    } catch (error) {
-      console.error("Failed to save profile:", error);
     }
   };
 
@@ -1295,11 +1262,12 @@ ${conversationText}`,
       {/* メインコンテンツ - モバイル版 */}
       <VStack
         gap={0}
-        pt={2}
-        pb="64px"
+        pt={0}
+        pb="60px"
         display={{ base: "flex", md: "none" }}
         flex={1}
         overflow="hidden"
+        justifyContent="center"
       >
         {/* ヒアリング進捗インジケーター */}
         {taskBreakdownStage === "hearing" && (
@@ -1370,21 +1338,27 @@ ${conversationText}`,
           display="flex"
           flexDirection="column"
           alignItems="center"
-          flex={1}
-          minH={0}
-          justifyContent="center"
-          mt="-15px"
         >
-          {/* キャラクター */}
-          <Box position="relative" ml={4}>
-            <CharacterAvatar
-              expression={characterExpression}
-              width="330px"
-              height="495px"
-              variant="bare"
-            />
+          {/* キャラクター（上部をクリップ） */}
+          <Box
+            position="relative"
+            ml={4}
+            h="min(460px, 50vh)"
+            overflow="hidden"
+          >
+            <Box>
+              <CharacterAvatar
+                expression={characterExpression}
+                width="min(420px, 92vw)"
+                height="min(630px, 68vh)"
+                variant="bare"
+              />
+            </Box>
+          </Box>
+          {/* 吹き出し+入力をキャラの下に配置 */}
+          <Box position="relative" w="100%" display="flex" flexDirection="column" alignItems="center">
 
-            {/* 吹き出し（キャラクターに対して相対配置） */}
+            {/* 吹き出し */}
             <Box
               bg="white"
               px={6}
@@ -1393,13 +1367,13 @@ ${conversationText}`,
               boxShadow={isBubbleExpanded ? "0 8px 24px rgba(0,0,0,0.15)" : "0 4px 12px rgba(0,0,0,0.08)"}
               border="1px solid"
               borderColor="gray.200"
-              position={isBubbleExpanded ? "fixed" : "absolute"}
-              bottom={isBubbleExpanded ? "auto" : "-20px"}
+              position={isBubbleExpanded ? "fixed" : "relative"}
               top={isBubbleExpanded ? "50%" : "auto"}
-              left={isBubbleExpanded ? "50%" : "50%"}
-              transform={isBubbleExpanded ? "translate(-50%, -50%)" : "translateX(-50%)"}
+              left={isBubbleExpanded ? "50%" : "auto"}
+              transform={isBubbleExpanded ? "translate(-50%, -50%)" : "none"}
               maxW={isBubbleExpanded ? "90vw" : "320px"}
-              w={isBubbleExpanded ? "90vw" : "90vw"}
+              w="90vw"
+              mt="-10px"
               zIndex={isBubbleExpanded ? 100 : 10}
               cursor="pointer"
               onClick={() => !isTyping && setIsBubbleExpanded(!isBubbleExpanded)}
@@ -1465,7 +1439,7 @@ ${conversationText}`,
         )}
 
         {/* 下部固定エリア（ログボタン + 入力欄 + 送信ボタン） - モバイル版 */}
-        <Box w="90%" maxW="340px" flexShrink={0} pb={2}>
+        <Box w="90%" maxW="340px" flexShrink={0} pb={1} mt={2}>
           {/* 入力欄と送信ボタンを横並びに */}
           <HStack gap={2} w="100%">
             {/* ログボタン（会話履歴） */}
@@ -2035,12 +2009,6 @@ ${conversationText}`,
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>
-
-      {/* 初回プロフィール設定モーダル */}
-      <ProfileSetupModal
-        isOpen={showProfileSetup}
-        onComplete={handleProfileSetupComplete}
-      />
 
       {/* 設定モーダル */}
       <SettingsModal

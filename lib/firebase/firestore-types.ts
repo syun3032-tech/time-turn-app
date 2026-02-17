@@ -22,6 +22,8 @@ export interface UserProfile {
   preferences?: Record<string, any>
   analysisResult?: Record<string, any>
   profileCompleted: boolean
+  initialGoal?: string             // オンボーディングで言及された関心事
+  onboardingCompletedAt?: Date     // オンボーディング完了日時
   fcmTokens?: string[]             // FCMトークン（複数デバイス対応）
   notificationSettings?: NotificationSettings  // 通知設定
   createdAt: Date
