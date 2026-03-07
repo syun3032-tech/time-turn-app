@@ -91,5 +91,12 @@ service cloud.firestore {
     match /structuredKnowledge/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // 約束追跡: userIdフィールドが自分のものだけ読み書き可能
+    match /promises/{promiseId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
   }
 }

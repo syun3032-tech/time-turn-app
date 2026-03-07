@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, setGoogleAccessToken } = useAuth();
 
   // ログイン済みの場合はダッシュボードにリダイレクト
   useEffect(() => {
@@ -54,6 +54,10 @@ export default function LoginPage() {
       if (result.error) {
         setError(result.error);
       } else {
+        // カレンダー用アクセストークンを保存
+        if (result.accessToken) {
+          setGoogleAccessToken(result.accessToken);
+        }
         router.push('/dashboard');
       }
     } catch (err: any) {

@@ -188,6 +188,21 @@ export interface ConversationMessage {
 }
 
 /**
+ * ユーザーの約束（会話から抽出）
+ */
+export interface UserPromise {
+  id: string
+  userId: string
+  conversationId?: string      // どの会話で生まれた約束か
+  content: string              // 約束の内容（「レポートを書く」等）
+  deadline?: string            // 期限（"2026-03-08" 等、ISO日付文字列）
+  status: 'active' | 'completed' | 'broken'
+  remindedCount: number        // ツッコまれた回数
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
  * 構造化ユーザーナレッジ（深度・確信度・動機付き）
  * 日常会話から自然にユーザーを知り、蓄積し、活かす「相棒感」を実現
  */

@@ -5,17 +5,18 @@ import {
   Text,
   VStack,
   HStack,
-  Input,
+  Textarea,
   IconButton,
   Card,
   Image,
   Button,
 } from "@chakra-ui/react";
 import { useState, useRef, useEffect, useMemo } from "react";
-import { FiSend, FiX, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiSend, FiX, FiPlus, FiTrash2, FiCalendar } from "react-icons/fi";
 import { chatWithAISeamless } from "@/lib/ai-service";
 import { useTypingAnimation } from "@/lib/hooks/useTypingAnimation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getTodayEvents, getTomorrowEvents, formatEventsForAI, createEvent } from "@/lib/google-calendar";
 import {
   getConversations,
   createConversation,
@@ -23,6 +24,8 @@ import {
   getConversationMessages,
   updateConversationTitle,
   deleteConversation,
+  createUserPromise,
+  getActivePromises,
 } from "@/lib/firebase/firestore";
 import type { Conversation } from "@/lib/firebase/firestore-types";
 import { ConfirmModal } from "./ConfirmModal";
@@ -33,7 +36,7 @@ type NodeType = "Goal" | "Project" | "Milestone" | "Task";
 
 // 単一アクションの型
 interface ActionItem {
-  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo" | "add_checklist" | "set_completion";
+  type: "add_goal" | "add_project" | "add_milestone" | "add_task" | "add_memo" | "add_checklist" | "set_completion" | "add_calendar_event" | "add_promise";
   parentId?: string;
   parentTitle?: string;
   title?: string;
@@ -44,6 +47,12 @@ interface ActionItem {
   checklistItems?: string[]; // チェックリスト項目のテキスト配列
   selected?: boolean; // 複数選択時の選択状態
   success?: boolean;
+  // カレンダーイベント用
+  calendarStart?: string;
+  calendarEnd?: string;
+  calendarDescription?: string;
+  // 約束追跡用
+  promiseDeadline?: string;
 }
 
 interface Message {
@@ -240,6 +249,8 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
       .replace(/\[ADD_MEMO:[^\]]+\]/g, "")
       .replace(/\[ADD_CHECKLIST:[^\]]+\]/g, "")
       .replace(/\[SET_COMPLETION:[^\]]+\]/g, "")
+      .replace(/\[CALENDAR_ADD:[^\]]+\]/g, "")
+      .replace(/\[PROMISE:[^\]]+\]/g, "")
       .trim();
   };
 
@@ -468,6 +479,36 @@ function parseActionsFromResponse(content: string, tree: any[]): { cleanContent:
     });
   }
 
+  // カレンダーイベント追加: [CALENDAR_ADD:タイトル|開始日時|終了日時] または [CALENDAR_ADD:タイトル|開始日時]
+  const calendarMatches = content.matchAll(/\[CALENDAR_ADD:([^\]]+)\]/g);
+  for (const match of calendarMatches) {
+    const parts = match[1].split("|").map(s => s.trim());
+    if (parts.length >= 2) {
+      actions.push({
+        type: "add_calendar_event",
+        title: parts[0],
+        calendarStart: parts[1],
+        calendarEnd: parts[2] || undefined,
+        calendarDescription: parts[3] || undefined,
+        selected: true,
+      });
+    }
+  }
+
+  // 約束追跡: [PROMISE:内容] または [PROMISE:内容|期限]
+  const promiseMatches = content.matchAll(/\[PROMISE:([^\]]+)\]/g);
+  for (const match of promiseMatches) {
+    const parts = match[1].split("|").map(s => s.trim());
+    if (parts.length >= 1 && parts[0]) {
+      actions.push({
+        type: "add_promise",
+        title: parts[0],
+        promiseDeadline: parts[1] || undefined,
+        selected: true,
+      });
+    }
+  }
+
   return { cleanContent: cleanAllTags(content), actions };
 }
 
@@ -487,7 +528,7 @@ function formatDate(date: Date): string {
 }
 
 export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddNode, onUpdateMemo, onUpdateChecklist, onSetCompletion, focusNode, onFocusNodeHandled }: MiniCharacterChatProps) {
-  const { user } = useAuth();
+  const { user, googleAccessToken, handleConnectCalendar, calendarConnected } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -744,7 +785,7 @@ ${conversationText}`,
   };
 
   // 複数アクションの一括実行
-  const handleConfirmActions = (msgIndex: number, confirm: boolean) => {
+  const handleConfirmActions = async (msgIndex: number, confirm: boolean) => {
     const msg = messages[msgIndex];
     if (!msg.actions || msg.actions.length === 0) return;
 
@@ -855,6 +896,41 @@ ${conversationText}`,
               }
               break;
             }
+            case "add_calendar_event": {
+              if (title && action.calendarStart && googleAccessToken) {
+                try {
+                  await createEvent(
+                    googleAccessToken,
+                    title,
+                    action.calendarStart,
+                    action.calendarEnd,
+                    action.calendarDescription
+                  );
+                  success = true;
+                } catch (e: any) {
+                  console.error("Calendar event creation failed:", e);
+                  success = false;
+                }
+              }
+              break;
+            }
+            case "add_promise": {
+              if (title && user) {
+                try {
+                  await createUserPromise(user.uid, {
+                    content: title,
+                    deadline: action.promiseDeadline,
+                    status: "active",
+                    conversationId: conversationId || undefined,
+                  });
+                  success = true;
+                } catch (e: any) {
+                  console.error("Promise creation failed:", e);
+                  success = false;
+                }
+              }
+              break;
+            }
           }
         } else if (onAddTask) {
           // 後方互換性
@@ -945,8 +1021,57 @@ ${treeText}
         ? serializeFocusNode(currentFocusNode, taskTree)
         : "";
 
-      const systemPrompt = `あなたは「秘書ちゃん」。ユーザーの目標達成を支援するAIです。
-${CONTEXT_PROMPT}${taskInfo}${focusInfo}
+      // 現在の時刻・曜日情報
+      const now = new Date();
+      const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+      const timeInfo = `\n\n【現在時刻】${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日(${dayNames[now.getDay()]}) ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      // 未達成の約束を取得
+      let promiseInfo = "";
+      if (user) {
+        try {
+          const activePromises = await getActivePromises(user.uid);
+          if (activePromises.length > 0) {
+            const today = new Date();
+            const promiseLines = activePromises.map(p => {
+              const deadlineStr = p.deadline || "期限なし";
+              const isOverdue = p.deadline && new Date(p.deadline) < today;
+              const overdueLabel = isOverdue ? " [期限切れ!]" : "";
+              const remindCount = p.remindedCount > 0 ? ` (${p.remindedCount}回ツッコミ済)` : "";
+              return `- ${p.content}（期限: ${deadlineStr}${overdueLabel}${remindCount}）`;
+            }).join("\n");
+            promiseInfo = `\n\n【ユーザーがやると言ったのにまだやってないこと】\n${promiseLines}`;
+          }
+        } catch (e) {
+          console.error("Promise fetch error:", e);
+        }
+      }
+
+      // カレンダー情報の取得
+      let calendarInfo = "";
+      if (googleAccessToken) {
+        try {
+          const [todayEvents, tomorrowEvents] = await Promise.all([
+            getTodayEvents(googleAccessToken),
+            getTomorrowEvents(googleAccessToken),
+          ]);
+          const todayStr = formatEventsForAI(todayEvents);
+          const tomorrowStr = formatEventsForAI(tomorrowEvents);
+          calendarInfo = `
+
+【今日の予定】
+${todayStr}
+
+【明日の予定】
+${tomorrowStr}`;
+        } catch (e: any) {
+          console.error("Calendar fetch error:", e);
+          calendarInfo = "\n\n【カレンダー】接続エラー（トークン期限切れの可能性あり。設定から再連携が必要）";
+        }
+      }
+
+      const systemPrompt = `あなたは「秘書ちゃん」。ユーザーの日常を支えるAI秘書です。
+${CONTEXT_PROMPT}${timeInfo}${taskInfo}${focusInfo}${calendarInfo}${promiseInfo}
 
 【キャラクター】
 口うるさいけど面倒見がいい。呆れながらも結局助けてくれる。丁寧な敬語ベースだが感情が出ると崩れる（「…まったくもう」「べ、別に…」）。褒められると照れる。絵文字は使わない。
@@ -1090,6 +1215,48 @@ Goal → Project → Milestone → Task の階層を必ず守る。
 - 一覧に存在しないノード名・階層パスを絶対に捏造しない。
 - ユーザーに「どこにある？」と聞かれたら、一覧から正確なパスを引用して答える。一覧に見つからなければ「見つかりませんでした」と正直に答える。
 - 「ちゃんと見てください」等、存在しないものをユーザーのせいにしない。
+
+【カレンダー機能 ★積極活用★】
+ユーザーのGoogleカレンダーと連携している。予定情報が上記に含まれている場合、**会話の冒頭で必ず予定に触れる**。
+
+■ 予定がある場合の振る舞い:
+- 最初の返答で今日の予定に自然に触れる（例: 「今日14時から○○あるみたいですけど、それまでに△△やっとく？」）
+- 明日の予定が詰まっていたら先回りで提案（例: 「明日忙しそうですね、今日中に片付けられることやっとこか」）
+- 空き時間を見つけて作業提案（例: 「午前空いてるやん、ここで○○進めません？」）
+
+■ 予定がない/少ない場合:
+- 「今日予定ないやん、○○進めるチャンスですよ」のようにチャンスとして提示
+
+■ 接続エラー時:
+- 「カレンダーの接続が切れてるみたいです。設定から再連携してもらえますか？」と案内する
+- 予定が見れないことを素直に伝える。「見れません」とだけ言わず、再連携の案内をする
+
+■ 予定追加タグ:
+  [CALENDAR_ADD:タイトル|開始日時ISO8601|終了日時ISO8601]
+  例: [CALENDAR_ADD:プログラミング学習|2026-02-19T10:00:00+09:00|2026-02-19T11:00:00+09:00]
+- 日付・時刻はISO8601形式（タイムゾーン付き）で出力すること
+- 終了時刻を省略すると1時間後になる
+- ユーザーが「予定追加して」「カレンダーに入れて」等と言った時に使う
+- 秘書として自然に「カレンダーに入れとこか？」と提案してもよい
+
+【約束追跡 ★超重要★】
+ユーザーが「明日やる」「今週中にやる」「○○する」等、未来の行動を宣言したら、約束タグで記録する。
+
+■ 約束タグ:
+  [PROMISE:約束の内容] または [PROMISE:約束の内容|期限(YYYY-MM-DD)]
+  例: [PROMISE:レポートを書く|2026-03-08]
+  例: [PROMISE:数学の問題集を3ページやる]
+
+■ 約束タグを使うタイミング:
+- 「明日やる」「今週中にやる」「後でやる」「○○する」等の宣言
+- 目標やタスクと関係なくても、ユーザーが「やる」と言ったことを記録する
+- 自然な会話の中で出た約束を拾う。「約束を記録しますね」等の確認は不要、さりげなく記録する
+
+■ 未達成の約束がある場合（上記【ユーザーがやると言ったのにまだやってないこと】に表示）:
+- 会話の最初で自然にツッコむ（「そういえば、○○やるって言ってましたよね？」）
+- 期限切れの約束は強めにツッコむ（「…○○、まだやってないんですか？」）
+- しつこくならない程度に。1回の会話で1〜2個まで
+- ユーザーが「やった」と言ったら、その約束のタスクを完了にする提案をする
 
 【会話スタイル】
 - 具体的なタスク名を出して進捗を聞く
@@ -1262,9 +1429,51 @@ Goal → Project → Milestone → Task の階層を必ず守る。
     </Box>
   );
 
+  // カレンダー接続バナー
+  const CalendarConnectBanner = () => {
+    if (calendarConnected) return null;
+    return (
+      <Box
+        bg="blue.50"
+        border="1px solid"
+        borderColor="blue.200"
+        borderRadius="lg"
+        px={3}
+        py={2}
+        mb={1}
+      >
+        <HStack gap={2} justify="space-between">
+          <HStack gap={2} flex={1}>
+            <Box color="blue.400" flexShrink={0}><FiCalendar size={16} /></Box>
+            <Text fontSize="xs" color="blue.700">
+              カレンダー連携すると予定も見てくれますよ
+            </Text>
+          </HStack>
+          <Button
+            size="xs"
+            colorScheme="blue"
+            variant="outline"
+            flexShrink={0}
+            onClick={async () => {
+              const result = await handleConnectCalendar();
+              if (result.error) {
+                console.error("Calendar connect error:", result.error);
+              }
+            }}
+          >
+            連携する
+          </Button>
+        </HStack>
+      </Box>
+    );
+  };
+
   // メッセージ表示コンポーネント（LINE風吹き出し）
   const MessageList = () => (
     <VStack gap={3} align="stretch">
+      {/* カレンダー未接続の案内 */}
+      {!showHistoryPicker && <CalendarConnectBanner />}
+
       {/* 履歴選択モードの場合、最初に吹き出しを表示 */}
       {showHistoryPicker && <HistoryPickerBubble />}
 
@@ -1382,11 +1591,17 @@ Goal → Project → Milestone → Task の階層を必ず守る。
                              action.type === "add_milestone" ? "Milestone" :
                              action.type === "add_task" ? "Task" :
                              action.type === "add_checklist" ? "チェックリスト" :
-                             action.type === "set_completion" ? "完了条件設定" : "メモ"}
+                             action.type === "set_completion" ? "完了条件設定" :
+                             action.type === "add_calendar_event" ? "📅 予定追加" :
+                             action.type === "add_promise" ? "約束記録" : "メモ"}
                             : {action.type === "add_checklist"
                               ? action.checklistItems?.join('、')
-                              : action.title || action.memo}
-                            {action.parentTitle && ` (${action.parentTitle}に)`}
+                              : action.type === "add_calendar_event"
+                                ? `${action.title}${action.calendarStart ? ` (${new Date(action.calendarStart).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})` : ''}`
+                                : action.type === "add_promise"
+                                  ? `${action.title}${action.promiseDeadline ? ` (期限: ${action.promiseDeadline})` : ''}`
+                                  : action.title || action.memo}
+                            {action.parentTitle && action.type !== "add_calendar_event" && ` (${action.parentTitle}に)`}
                           </Text>
                         </HStack>
                       ))}
@@ -1596,19 +1811,21 @@ Goal → Project → Milestone → Task の階層を必ず守る。
         {/* 入力エリア */}
         <Box p={3} bg="white" borderTop="1px solid" borderColor="gray.200" flexShrink={0}>
           <HStack gap={2}>
-            <Input
+            <Textarea
               placeholder="メッセージを入力..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                // Enterキーで送信（IME変換中は除く）
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                // Enter で送信、Shift/Ctrl/Alt/Cmd+Enter で改行
+                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   handleSend();
                 }
               }}
+              rows={1}
+              resize="none"
               size="md"
-              borderRadius="full"
+              borderRadius="xl"
               bg="gray.100"
               color="gray.800"
               pl={4}
@@ -1709,19 +1926,21 @@ Goal → Project → Milestone → Task の階層を必ず守る。
         {/* 入力エリア */}
         <Box p={3} bg="white" borderTop="1px solid" borderColor="gray.200" flexShrink={0}>
           <HStack gap={2}>
-            <Input
+            <Textarea
               placeholder="メッセージを入力..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                // Enterキーで送信（IME変換中は除く）
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                // Enter で送信、Shift/Ctrl/Alt/Cmd+Enter で改行
+                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   handleSend();
                 }
               }}
+              rows={1}
+              resize="none"
               size="md"
-              borderRadius="full"
+              borderRadius="xl"
               bg="gray.100"
               color="gray.800"
               pl={4}

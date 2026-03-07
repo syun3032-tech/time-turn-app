@@ -5,9 +5,16 @@ import {
   onAuthStateChanged,
   User,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  reauthenticateWithPopup
 } from 'firebase/auth'
 import { getAuth } from './config'
+
+// Google Calendar API scopes
+const CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.readonly'
+]
 
 /**
  * メールアドレスでサインアップ
@@ -36,16 +43,57 @@ export async function signIn(email: string, password: string) {
 }
 
 /**
- * Googleでログイン
+ * Googleでログイン（カレンダースコープ付き）
  */
 export async function signInWithGoogle() {
   try {
     const auth = getAuth();
     const provider = new GoogleAuthProvider()
+    // カレンダーアクセスのスコープを追加
+    CALENDAR_SCOPES.forEach(scope => provider.addScope(scope))
     const userCredential = await signInWithPopup(auth, provider)
-    return { user: userCredential.user, error: null }
+    // Google OAuthアクセストークンを取得
+    const credential = GoogleAuthProvider.credentialFromResult(userCredential)
+    const accessToken = credential?.accessToken || null
+    return { user: userCredential.user, accessToken, error: null }
   } catch (error: any) {
-    return { user: null, error: error.message }
+    return { user: null, accessToken: null, error: error.message }
+  }
+}
+
+/**
+ * Googleカレンダーを接続（既存ユーザー用・再認証でトークン取得）
+ */
+export async function connectGoogleCalendar() {
+  try {
+    const auth = getAuth();
+    const currentUser = auth.currentUser
+    if (!currentUser) {
+      return { accessToken: null, error: 'ログインしていません' }
+    }
+    const provider = new GoogleAuthProvider()
+    CALENDAR_SCOPES.forEach(scope => provider.addScope(scope))
+    // 再認証でカレンダースコープ付きトークンを取得
+    const result = await reauthenticateWithPopup(currentUser, provider)
+    const credential = GoogleAuthProvider.credentialFromResult(result)
+    const accessToken = credential?.accessToken || null
+    return { accessToken, error: null }
+  } catch (error: any) {
+    // reauthenticateが失敗する場合はsignInWithPopupで再試行
+    if (error.code === 'auth/user-mismatch') {
+      try {
+        const authInstance = getAuth();
+        const provider = new GoogleAuthProvider()
+        CALENDAR_SCOPES.forEach(scope => provider.addScope(scope))
+        const result = await signInWithPopup(authInstance, provider)
+        const credential = GoogleAuthProvider.credentialFromResult(result)
+        const accessToken = credential?.accessToken || null
+        return { accessToken, error: null }
+      } catch (retryError: any) {
+        return { accessToken: null, error: retryError.message }
+      }
+    }
+    return { accessToken: null, error: error.message }
   }
 }
 

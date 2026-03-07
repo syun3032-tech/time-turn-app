@@ -10,8 +10,9 @@ import {
   Text,
   HStack,
 } from "@chakra-ui/react";
-import { FiX } from "react-icons/fi";
+import { FiX, FiCalendar } from "react-icons/fi";
 import type { UserProfile } from "@/lib/firebase/firestore-types";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,6 +27,8 @@ export function SettingsModal({ isOpen, onClose, profile, onSave, onLogout }: Se
   const [occupation, setOccupation] = useState("");
   const [hobbies, setHobbies] = useState("");
   const [loading, setLoading] = useState(false);
+  const { calendarConnected, handleConnectCalendar } = useAuth();
+  const [calendarLoading, setCalendarLoading] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -161,6 +164,36 @@ export function SettingsModal({ isOpen, onClose, profile, onSave, onLogout }: Se
           </HStack>
 
           <Box borderTop="1px solid" borderColor="gray.200" pt={4} mt={2}>
+            <HStack justify="space-between" align="center" mb={4}>
+              <HStack gap={2}>
+                <Box color={calendarConnected ? "green.500" : "gray.500"}><FiCalendar size={18} /></Box>
+                <VStack align="start" gap={0}>
+                  <Text fontSize="sm" fontWeight="semibold" color="black">Googleカレンダー</Text>
+                  <Text fontSize="xs" color={calendarConnected ? "green.500" : "gray.400"}>
+                    {calendarConnected ? "接続済み" : "未接続"}
+                  </Text>
+                </VStack>
+              </HStack>
+              {!calendarConnected && (
+                <Button
+                  size="sm"
+                  colorScheme="blue"
+                  variant="outline"
+                  loading={calendarLoading}
+                  onClick={async () => {
+                    setCalendarLoading(true);
+                    try {
+                      const result = await handleConnectCalendar();
+                      if (result.error) console.error("Calendar connect error:", result.error);
+                    } finally {
+                      setCalendarLoading(false);
+                    }
+                  }}
+                >
+                  連携する
+                </Button>
+              )}
+            </HStack>
             <Button
               colorScheme="red"
               variant="outline"

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Text, VStack, Input, Button, HStack, Badge, Card, IconButton, Image } from "@chakra-ui/react";
+import { Box, Text, VStack, Textarea, Button, HStack, Badge, Card, IconButton, Image } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
 import { CharacterAvatar, getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
 import { useState, useEffect, useRef } from "react";
@@ -18,6 +18,7 @@ import { USAGE_LIMITS, getLimitReachedMessage } from "@/lib/usage-config";
 import { signOut as firebaseSignOut } from "@/lib/firebase/auth";
 import { parseTaskTreeFromMessage, hasTaskTreeStructure } from "@/lib/task-tree-parser";
 import { SettingsModal } from "@/components/SettingsModal";
+import { getTodayEvents, getTomorrowEvents, formatEventsForAI } from "@/lib/google-calendar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { NotificationPermission } from "@/components/NotificationPermission";
@@ -50,7 +51,7 @@ const HEARING_ITEMS = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, googleAccessToken } = useAuth();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [characterMessage, setCharacterMessage] = useState("");
@@ -996,10 +997,27 @@ ${conversationText}`,
 ※上記は過去の会話で収集済み。同じ質問を繰り返さないこと。`
         : "";
 
-      // システムプロンプト + ヒアリング情報を結合
+      // カレンダー情報の取得
+      let calendarContext = "";
+      if (googleAccessToken) {
+        try {
+          const [todayEvts, tomorrowEvts] = await Promise.all([
+            getTodayEvents(googleAccessToken),
+            getTomorrowEvents(googleAccessToken),
+          ]);
+          const now = new Date();
+          const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+          calendarContext = `\n【現在時刻】${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日(${dayNames[now.getDay()]}) ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}\n【今日の予定】\n${formatEventsForAI(todayEvts)}\n【明日の予定】\n${formatEventsForAI(tomorrowEvts)}\n※予定情報を自然に会話に活かすこと。空き時間があれば活用提案をする。`;
+        } catch (e) {
+          console.error("Calendar fetch error:", e);
+          calendarContext = "\n【カレンダー】接続エラー（トークン期限切れの可能性あり。設定から再連携が必要と案内すること）";
+        }
+      }
+
+      // システムプロンプト + ヒアリング情報 + カレンダー情報を結合
       const fullSystemPrompt = systemPrompt
-        ? systemPrompt + hearingContext
-        : hearingContext;
+        ? systemPrompt + hearingContext + calendarContext
+        : hearingContext + calendarContext;
 
       // コンテキストを構築
       if (fullSystemPrompt) {
@@ -1462,24 +1480,19 @@ ${conversationText}`,
               <Box color="orange.600" fontSize="14px" lineHeight={1}>📋</Box>
               <Text fontSize="8px" color="orange.700" fontWeight="bold">ログ</Text>
             </VStack>
-            <Input
-              placeholder={
-                taskBreakdownStage === "output"
-                  ? "タスクについて..."
-                  : taskBreakdownStage === "proposal"
-                  ? "「お願い」など..."
-                  : taskBreakdownStage === "hearing"
-                  ? "答えてください..."
-                  : "「〜したい」と話す..."
-              }
+            <Textarea
+              placeholder="お話してみましょう"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
+                // Enter で送信、Shift/Ctrl/Alt/Cmd+Enter で改行
+                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
                   e.preventDefault();
                   handleSendMessage();
                 }
               }}
+              rows={2}
+              resize="none"
               bg="white"
               borderRadius="md"
               disabled={isLoading}
@@ -1488,6 +1501,7 @@ ${conversationText}`,
               fontSize="sm"
               size="sm"
               px={3}
+              py="10px"
               flex={1}
               _placeholder={{ color: "gray.400" }}
             />
@@ -1708,7 +1722,7 @@ ${conversationText}`,
                   <Box color="orange.600" fontSize="22px" lineHeight={1}>📋</Box>
                   <Text fontSize="10px" color="orange.700" fontWeight="bold">ログ</Text>
                 </VStack>
-                <Input
+                <Textarea
                   placeholder={
                     taskBreakdownStage === "output"
                       ? "タスクについて何かあれば..."
@@ -1721,12 +1735,14 @@ ${conversationText}`,
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={(e) => {
-                    // Enterキーで送信（IME変換中は除く）
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
+                    // Ctrl+Enter で改行、Enter で送信
+                    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.nativeEvent.isComposing && message.trim() && !isLoading) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
+                  rows={1}
+                  resize="none"
                   bg="white"
                   borderRadius="lg"
                   disabled={isLoading}

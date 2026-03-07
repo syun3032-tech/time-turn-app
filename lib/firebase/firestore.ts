@@ -30,7 +30,8 @@ import type {
   HearingProgress,
   HearingSummary,
   StructuredUserKnowledge,
-  ExtractedStructuredKnowledge
+  ExtractedStructuredKnowledge,
+  UserPromise
 } from './firestore-types'
 
 // Timestamp変換ヘルパー
@@ -1166,4 +1167,44 @@ export async function migrateToStructuredKnowledge(userId: string): Promise<void
 
   const docRef = doc(db, 'structuredKnowledge', userId)
   await setDoc(docRef, migrated)
+}
+
+/**
+ * User Promises（約束追跡）
+ */
+export async function createUserPromise(
+  userId: string,
+  data: Omit<UserPromise, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'remindedCount'>
+): Promise<string> {
+  const docRef = await addDoc(collection(db, 'promises'), {
+    ...data,
+    userId,
+    remindedCount: 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  })
+  return docRef.id
+}
+
+export async function getActivePromises(userId: string): Promise<UserPromise[]> {
+  const q = query(
+    collection(db, 'promises'),
+    where('userId', '==', userId),
+    where('status', '==', 'active'),
+    orderBy('createdAt', 'desc')
+  )
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map(d => ({
+    id: d.id,
+    ...d.data(),
+    createdAt: toDate(d.data().createdAt),
+    updatedAt: toDate(d.data().updatedAt)
+  } as UserPromise))
+}
+
+export async function updateUserPromise(promiseId: string, data: Partial<UserPromise>) {
+  await updateDoc(doc(db, 'promises', promiseId), {
+    ...data,
+    updatedAt: serverTimestamp()
+  })
 }
