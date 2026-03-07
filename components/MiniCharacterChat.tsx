@@ -533,9 +533,19 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationIdRaw] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+
+  // conversationIdをlocalStorageにも保存して画面遷移で消えないようにする
+  const setConversationId = (id: string | null) => {
+    setConversationIdRaw(id);
+    if (id) {
+      localStorage.setItem("mini-chat-conversation-id", id);
+    } else {
+      localStorage.removeItem("mini-chat-conversation-id");
+    }
+  };
 
   // 現在フォーカス中のノード（システムプロンプトに使用）
   const [currentFocusNode, setCurrentFocusNode] = useState<any>(null);
@@ -578,6 +588,24 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
       setIsLoadingHistory(true);
       try {
         await loadConversations();
+
+        // localStorageから前回の会話を復元
+        const savedConvId = localStorage.getItem("mini-chat-conversation-id");
+        if (savedConvId) {
+          try {
+            const savedMessages = await getConversationMessages(savedConvId);
+            if (savedMessages.length > 0) {
+              setConversationIdRaw(savedConvId);
+              setMessages(savedMessages.map(m => ({
+                role: m.role,
+                content: m.content,
+              })));
+            }
+          } catch {
+            localStorage.removeItem("mini-chat-conversation-id");
+          }
+        }
+
         initializedRef.current = true;
       } catch (error) {
         console.error("Failed to initialize:", error);
@@ -1085,8 +1113,11 @@ STEP1: 受け止め + リアクション
 - 「承知しました」「分かりました」だけで終わるのは禁止。必ずSTEP2以降に進む。
 
 STEP2: ヒアリングが必要？
-- 新しい目標 → Why（動機）・現状・ゴール・期限を聞く。Goal追加前に動機を必ず確認。
-- 情報不足 → 質問して深掘り。質問を続けてOK。
+- 新しい目標で、既存の目標がある場合 → まず「これ、既存の○○と関連ありますか？」と聞く。
+  * 関連あり → 既存Goalの下にProject/Milestoneとして追加。深いヒアリングはスキップしてサクッと完了条件と進め方だけ決めてSTEP3へ。
+  * 関連なし → 簡潔にWhy（動機）と期限だけ確認してSTEP3へ。全部聞こうとしない。
+- 新しい目標で、既存の目標がない場合 → Why（動機）・現状・ゴール・期限を聞く。
+- 情報不足 → 質問して深掘り。ただし1回の質問で複数項目をまとめて聞く。何往復もしない。
 - 完了条件が決まらない → 数値化できる切り口を探る質問をする。
 - 十分な情報がある → STEP3へ。
 
