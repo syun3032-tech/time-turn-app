@@ -533,17 +533,25 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [conversationId, setConversationIdRaw] = useState<string | null>(null);
+  // 初期値をlocalStorageから読み込む（画面遷移で消えないように）
+  const [conversationId, setConversationIdRaw] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("mini-chat-conversation-id");
+    }
+    return null;
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
 
-  // conversationIdをlocalStorageにも保存して画面遷移で消えないようにする
+  // conversationIdをlocalStorageにも保存
   const setConversationId = (id: string | null) => {
     setConversationIdRaw(id);
-    if (id) {
-      localStorage.setItem("mini-chat-conversation-id", id);
-    } else {
-      localStorage.removeItem("mini-chat-conversation-id");
+    if (typeof window !== "undefined") {
+      if (id) {
+        localStorage.setItem("mini-chat-conversation-id", id);
+      } else {
+        localStorage.removeItem("mini-chat-conversation-id");
+      }
     }
   };
 
@@ -589,7 +597,7 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
       try {
         await loadConversations();
 
-        // localStorageから前回の会話を復元
+        // conversationIdが既にある場合（localStorageから復元済み）、メッセージを読み込む
         const savedConvId = localStorage.getItem("mini-chat-conversation-id");
         if (savedConvId) {
           try {
@@ -600,8 +608,13 @@ export function MiniCharacterChat({ isOpen, onClose, taskTree, onAddTask, onAddN
                 role: m.role,
                 content: m.content,
               })));
+            } else {
+              // 会話が空だった場合はクリア
+              setConversationIdRaw(null);
+              localStorage.removeItem("mini-chat-conversation-id");
             }
           } catch {
+            setConversationIdRaw(null);
             localStorage.removeItem("mini-chat-conversation-id");
           }
         }
