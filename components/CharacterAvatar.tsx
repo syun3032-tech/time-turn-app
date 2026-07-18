@@ -10,9 +10,9 @@ const EXPRESSION_IMAGES: Record<Expression, string> = {
   normal: "/秘書ゆり_ノーマル.png",        // デフォルト
   open_mouth: "/秘書ゆり_お口開けた.png",  // 通常の会話・説明
   wawa: "/わわ_秘書ゆり.png",              // 褒める・応援・驚き
-  niyari: "/秘書ゆり_ノーマル.png",        // にやり（画像がない場合はノーマル）
-  mewo: "/秘書ゆり_ノーマル.png",          // 目を（画像がない場合はノーマル）
-  ookiokutigake: "/秘書ゆり_お口開けた.png", // 大きく口開けた
+  niyari: "/秘書ゆり_ニヤリ.png",          // にやり・からかい
+  mewo: "/秘書ゆり_目を閉じた.png",        // 目を閉じる・呆れ
+  ookiokutigake: "/秘書ゆり_大きなお口.png", // 大きく口開けた
 };
 
 interface CharacterAvatarProps {

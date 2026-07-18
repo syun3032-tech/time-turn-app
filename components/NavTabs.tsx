@@ -3,11 +3,11 @@
 import { Flex, Link as ChakraLink, Text, Box } from "@chakra-ui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FiActivity, FiHome, FiList, FiUser } from "react-icons/fi";
+import { FiActivity, FiList, FiMessageCircle, FiUser } from "react-icons/fi";
 
 const tabs = [
-  { href: "/dashboard", label: "ホーム", icon: FiHome },
-  { href: "/tasks", label: "目標", icon: FiList },
+  { href: "/dashboard", label: "ゆり", icon: FiMessageCircle },
+  { href: "/tasks", label: "タスク", icon: FiList },
   { href: "/log", label: "ログ", icon: FiActivity },
   { href: "/profile", label: "プロフィール", icon: FiUser },
 ];
