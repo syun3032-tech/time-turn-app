@@ -198,45 +198,6 @@ export async function deleteTask(taskId: string) {
 }
 
 /**
- * Chat Messages
- */
-export async function saveChatMessage(userId: string, role: 'user' | 'assistant', content: string) {
-  const docRef = await addDoc(collection(db, 'chatMessages'), {
-    userId,
-    role,
-    content,
-    createdAt: serverTimestamp()
-  })
-  return docRef.id
-}
-
-export async function getChatMessages(userId: string, limitCount: number = 100): Promise<ChatMessage[]> {
-  const q = query(
-    collection(db, 'chatMessages'),
-    where('userId', '==', userId),
-    limit(limitCount)
-  )
-  const snapshot = await getDocs(q)
-
-  // クライアントサイドでソート
-  const messages = snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data(),
-    createdAt: toDate(doc.data().createdAt)
-  } as ChatMessage))
-
-  // createdAtでソート
-  return messages.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-}
-
-export async function clearChatHistory(userId: string) {
-  const q = query(collection(db, 'chatMessages'), where('userId', '==', userId))
-  const snapshot = await getDocs(q)
-  const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref))
-  await Promise.all(deletePromises)
-}
-
-/**
  * Completed Tasks
  */
 export async function saveCompletedTask(

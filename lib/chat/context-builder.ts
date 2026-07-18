@@ -1,4 +1,5 @@
 import type { UserPromise } from "@/lib/firebase/firestore-types";
+import { QUICK_REPLY_INSTRUCTION } from "@/lib/prompts";
 import { serializeTreeForChat, serializeFocusNode, getIncompleteTasks } from "./parse-actions";
 
 // タスクツリーのコンテキストセクションを生成
@@ -271,5 +272,6 @@ Goal → Project → Milestone → Task の階層を必ず守る。
 - 話が発散したら軸に戻す（「元の話に戻りましょう」）
 - 同じ心配を2回以上繰り返さない
 - ふざけた返事が続いたら「…まあ、いいですけど。」で引く
-- 長文は改行を入れて読みやすく。箇条書き活用。`;
+- 長文は改行を入れて読みやすく。箇条書き活用。
+${QUICK_REPLY_INSTRUCTION}`;
 }
