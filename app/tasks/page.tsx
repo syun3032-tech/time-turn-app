@@ -2,7 +2,7 @@
 
 import { Badge, Box, Button, Card, Flex, Heading, HStack, Text, VStack, Dialog, Progress, Switch, Input, Textarea } from "@chakra-ui/react";
 import { NavTabs } from "@/components/NavTabs";
-import { MiniCharacter } from "@/components/MiniCharacter";
+
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { FiCalendar, FiX, FiRotateCcw, FiRotateCw, FiCheck } from "react-icons/fi";
 import DatePicker from "react-datepicker";
@@ -15,133 +15,13 @@ import { TaskNode, ChecklistItem } from "@/types/task-tree";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import dynamic from "next/dynamic";
 import { textToHtml } from "@/lib/memo-utils";
+import { FOCUS_NODE_STORAGE_KEY } from "@/components/chat/ChatScreen";
 
 const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
   ssr: false,
   loading: () => <Box p={4}><Text fontSize="sm" color="gray.400">読み込み中...</Text></Box>,
 });
 
-const initialTreeBackup = [
-  {
-    id: "goal-1",
-    title: "Goal: 国立理系に合格する",
-    startDate: "2024-04-01",
-    endDate: "2025-03-31",
-    children: [
-      {
-        id: "project-1",
-        title: "Project: 共通テスト対策",
-        startDate: "2024-04-01",
-        endDate: "2025-01-15",
-        children: [
-          {
-            id: "milestone-1",
-            title: "Milestone: 数学基礎固め",
-            children: [
-              { id: "task-1", title: "Task: 基礎問題集1-3章", ai: true, status: "未着手" },
-              { id: "task-2", title: "Task: 過去問1年分", ai: false, status: "進行中" },
-              { id: "task-3", title: "Task: 応用問題集1章", ai: true, status: "未着手" },
-            ],
-          },
-          {
-            id: "milestone-2",
-            title: "Milestone: 英語長文読解",
-            children: [
-              { id: "task-4", title: "Task: 速読英単語", ai: false, status: "未着手" },
-              { id: "task-5", title: "Task: 長文問題集10題", ai: true, status: "未着手" },
-            ],
-          },
-        ],
-      },
-      {
-        id: "project-2",
-        title: "Project: 二次試験対策",
-        children: [
-          {
-            id: "milestone-3",
-            title: "Milestone: 物理演習",
-            children: [
-              { id: "task-6", title: "Task: 力学演習10問", ai: true, status: "未着手" },
-              { id: "task-7", title: "Task: 電磁気演習5問", ai: false, status: "未着手" },
-            ],
-          },
-          {
-            id: "milestone-4",
-            title: "Milestone: 化学演習",
-            children: [
-              { id: "task-8", title: "Task: 有機化学まとめ", ai: true, status: "進行中" },
-              { id: "task-9", title: "Task: 無機化学暗記", ai: false, status: "未着手" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "goal-2",
-    title: "Goal: TOEIC 800点突破",
-    children: [
-      {
-        id: "project-3",
-        title: "Project: リスニング強化",
-        children: [
-          {
-            id: "milestone-5",
-            title: "Milestone: Part1-4対策",
-            children: [
-              { id: "task-10", title: "Task: 公式問題集Part1", ai: true, status: "未着手" },
-              { id: "task-11", title: "Task: 公式問題集Part2", ai: true, status: "未着手" },
-              { id: "task-12", title: "Task: シャドーイング練習", ai: false, status: "未着手" },
-            ],
-          },
-        ],
-      },
-      {
-        id: "project-4",
-        title: "Project: リーディング強化",
-        children: [
-          {
-            id: "milestone-6",
-            title: "Milestone: Part5-7対策",
-            children: [
-              { id: "task-13", title: "Task: 文法問題100問", ai: true, status: "未着手" },
-              { id: "task-14", title: "Task: 長文問題20題", ai: false, status: "未着手" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "goal-3",
-    title: "Goal: プログラミングスキル向上",
-    children: [
-      {
-        id: "project-5",
-        title: "Project: Web開発マスター",
-        children: [
-          {
-            id: "milestone-7",
-            title: "Milestone: React学習",
-            children: [
-              { id: "task-15", title: "Task: 公式チュートリアル", ai: false, status: "進行中" },
-              { id: "task-16", title: "Task: Hooksの理解", ai: true, status: "未着手" },
-              { id: "task-17", title: "Task: ミニアプリ作成", ai: true, status: "未着手" },
-            ],
-          },
-          {
-            id: "milestone-8",
-            title: "Milestone: TypeScript習得",
-            children: [
-              { id: "task-18", title: "Task: 型システムの学習", ai: true, status: "未着手" },
-              { id: "task-19", title: "Task: 実践プロジェクト", ai: false, status: "未着手" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
 
 // 子要素の完了率を計算する関数
 function calculateProgress(node: any): number {
@@ -746,9 +626,6 @@ function TasksPageContent() {
   const [addChildType, setAddChildType] = useState<string>("");
   const [newChildTitle, setNewChildTitle] = useState("");
 
-  // ミニキャラチャット用state
-  const [isMiniChatOpen, setIsMiniChatOpen] = useState(false);
-
   // 認証チェック
   useEffect(() => {
     if (!loading && !user) {
@@ -826,9 +703,6 @@ function TasksPageContent() {
   const [memoEditor, setMemoEditor] = useState<any>(null);
   const [, setEditorTick] = useState(0); // エディタ状態変更時の再描画用
 
-  // AIと相談用state
-  const [chatFocusNode, setChatFocusNode] = useState<any>(null);
-  const chatOpenRef = useRef<(() => void) | null>(null);
 
   const handleToggle = (nodeId: string) => {
     setExpandedNodes((prev) => {
@@ -1137,8 +1011,7 @@ function TasksPageContent() {
 
   return (
     <Box
-      w={{ base: "100%", md: isMiniChatOpen ? "70%" : "100%" }}
-      transition="width 0.3s ease"
+      w="100%"
       minH="100vh"
       bg="gray.50"
     >
@@ -1203,133 +1076,7 @@ function TasksPageContent() {
         )}
       </VStack>
 
-      <MiniCharacter
-        onChatOpenChange={setIsMiniChatOpen}
-        taskTree={tree}
-        onAddNode={(parentId, title, nodeType, memo) => {
-          const newNode: any = {
-            id: `${nodeType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-            title: `${nodeType}: ${title}`,
-            type: nodeType,
-            children: nodeType === "Task" ? undefined : [],
-            memo: memo ? textToHtml(memo) : undefined,
-          };
-
-          if (nodeType === "Task") {
-            newNode.ai = false;
-            newNode.status = "未着手";
-          }
-
-          // parentId が null の場合は新しい Goal をルートに追加
-          if (parentId === null) {
-            setTree(prev => [...prev, newNode]);
-            setHighlightedNodeId(newNode.id);
-            setTimeout(() => setHighlightedNodeId(null), 3000);
-            return newNode.id;
-          }
-
-          // 関数型更新で最新のtreeを使う（連続呼び出し対応）
-          setTree(prev => {
-            // 親ノードの種類をチェック
-            const findNode = (nodes: any[], id: string): any | null => {
-              for (const node of nodes) {
-                if (node.id === id) return node;
-                if (node.children) {
-                  const found = findNode(node.children, id);
-                  if (found) return found;
-                }
-              }
-              return null;
-            };
-
-            const parentNode = findNode(prev, parentId);
-            if (parentNode) {
-              const parentType = parentNode.type ||
-                (parentNode.title?.startsWith("Goal:") ? "Goal" :
-                 parentNode.title?.startsWith("Project:") ? "Project" :
-                 parentNode.title?.startsWith("Milestone:") ? "Milestone" :
-                 parentNode.title?.startsWith("Task:") ? "Task" : null);
-
-              // 階層バリデーション
-              const validChildTypes: Record<string, string> = {
-                "Goal": "Project",
-                "Project": "Milestone",
-                "Milestone": "Task",
-              };
-
-              if (parentType && validChildTypes[parentType] !== nodeType) {
-                console.warn(`階層エラー: ${parentType} の下に ${nodeType} は追加できません。`);
-                const correctedType = validChildTypes[parentType];
-                if (correctedType) {
-                  newNode.id = `${correctedType.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-                  newNode.title = `${correctedType}: ${title}`;
-                  newNode.type = correctedType;
-                  newNode.children = correctedType === "Task" ? undefined : [];
-                  if (correctedType === "Task") {
-                    newNode.ai = false;
-                    newNode.status = "未着手";
-                  }
-                }
-              }
-            }
-
-            const updateNodes = (nodes: any[]): any[] => {
-              return nodes.map((node) => {
-                if (node.id === parentId) {
-                  return {
-                    ...node,
-                    children: [...(node.children || []), newNode],
-                  };
-                } else if (node.children) {
-                  return {
-                    ...node,
-                    children: updateNodes(node.children),
-                  };
-                }
-                return node;
-              });
-            };
-
-            return updateNodes(prev);
-          });
-
-          // 親ノードを自動展開
-          setExpandedNodes((prev) => {
-            const newSet = new Set(prev);
-            newSet.add(parentId);
-            return newSet;
-          });
-
-          // 追加したノードをハイライト（3秒後に消える）
-          setHighlightedNodeId(newNode.id);
-          setTimeout(() => setHighlightedNodeId(null), 3000);
-
-          return newNode.id;
-        }}
-        onUpdateMemo={handleUpdateMemo}
-        onUpdateChecklist={(nodeId, newItems) => {
-          // Append mode: merge new items with existing checklist using latest state
-          setTree(prev => {
-            const updateNodes = (nodes: any[]): any[] => {
-              return nodes.map((n) => {
-                if (n.id === nodeId) {
-                  return { ...n, checklist: [...(n.checklist || []), ...newItems] };
-                }
-                if (n.children) {
-                  return { ...n, children: updateNodes(n.children) };
-                }
-                return n;
-              });
-            };
-            return updateNodes(prev);
-          });
-        }}
-        onSetCompletion={handleSetCompletion}
-        focusNode={chatFocusNode}
-        onFocusNodeHandled={() => setChatFocusNode(null)}
-        chatOpenRef={chatOpenRef}
-      />
-      <NavTabs shrink={isMiniChatOpen} />
+      <NavTabs />
 
       {/* 詳細モーダル */}
       <Dialog.Root open={detailNode !== null} onOpenChange={(e) => { if (!e.open) setDetailNode(null); }}>
@@ -1342,7 +1089,7 @@ function TasksPageContent() {
             </Dialog.Header>
             <Dialog.Body py={4} px={4}>
               <VStack align="stretch" gap={0}>
-                {/* ミニ秘書ちゃんと相談するボタン（allモードのみ） */}
+                {/* ゆりに相談するボタン（allモードのみ） */}
                 {detailSection === "all" && (
                   <Box pb={3}>
                     <Button
@@ -1353,13 +1100,13 @@ function TasksPageContent() {
                       onClick={() => {
                         const node = detailNode;
                         setDetailNode(null);
-                        setChatFocusNode(node);
-                        setTimeout(() => {
-                          chatOpenRef.current?.();
-                        }, 100);
+                        if (node?.id) {
+                          sessionStorage.setItem(FOCUS_NODE_STORAGE_KEY, node.id);
+                        }
+                        router.push("/dashboard");
                       }}
                     >
-                      ミニ秘書ちゃんと相談する
+                      ゆりに相談する
                     </Button>
                     <Box h="1px" bg="gray.100" mt={3} />
                   </Box>
