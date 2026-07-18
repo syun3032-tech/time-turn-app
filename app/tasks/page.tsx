@@ -650,6 +650,8 @@ function TasksPageContent() {
       setTree([]); // ユーザー切り替え時に前のデータをクリア
       const loadedTree = await getTaskTreeAsync(user.uid);
       setTree(loadedTree);
+      // ロード直後の保存effect発火を抑止（読み込んだだけのツリーを書き戻さない）
+      saveTreeRef.current = loadedTree;
       setIsTreeLoading(false);
       hasLoadedOnce.current = true; // 初回ロード完了
     };

@@ -29,7 +29,13 @@ if (!getApps().length) {
  */
 async function verifyAuth(request: NextRequest): Promise<{ uid: string | null; authorized: boolean }> {
   if (!getApps().length) {
-    console.warn("Firebase Admin not initialized; skipping auth verification");
+    // 鍵が設定されているのに初期化に失敗した場合（JSON壊れ等）は設定ミス → fail closed
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+      console.error("FIREBASE_SERVICE_ACCOUNT_KEY is set but Admin SDK failed to initialize; rejecting request");
+      return { uid: null, authorized: false };
+    }
+    // 鍵未設定（ローカル開発等）は検証スキップ。本番ではFIREBASE_SERVICE_ACCOUNT_KEYを必ず設定すること
+    console.warn("Firebase Admin not initialized (no FIREBASE_SERVICE_ACCOUNT_KEY); skipping auth verification");
     return { uid: null, authorized: true };
   }
 

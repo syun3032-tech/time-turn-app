@@ -59,6 +59,8 @@ export function ChatScreen({ profile }: ChatScreenProps) {
       setIsTreeLoading(true);
       const tree = await getTaskTreeAsync(user.uid);
       setTaskTree(tree);
+      // ロード直後の保存effect発火を抑止（読み込んだだけのツリーを書き戻さない）
+      saveTreeRef.current = tree;
       setIsTreeLoading(false);
       hasLoadedTree.current = true;
     };
@@ -221,8 +223,15 @@ export function ChatScreen({ profile }: ChatScreenProps) {
     if (aiGreetingRequested.current) return;
     if (chat.isLoadingHistory || chat.conversationId) return;
     if (chat.messages.length !== 1 || chat.messages[0].role !== "assistant") return;
+    // 「ゆりに相談」のフォーカス会話中は挨拶を差し替えない
+    if (chat.currentFocusNode) {
+      aiGreetingRequested.current = true;
+      return;
+    }
 
     aiGreetingRequested.current = true;
+    // 差し替え対象の挨拶文を記録（他のフローが会話を切り替えていたら差し替えない）
+    const originalGreeting = chat.messages[0].content;
     const generate = async () => {
       try {
         const greetingPrompt = getGreetingPrompt(profile, knowledgeForPrompt);
@@ -230,7 +239,7 @@ export function ChatScreen({ profile }: ChatScreenProps) {
         if (response.success && response.content) {
           const greeting = response.content.replace(/[「」『』"""]/g, "").trim();
           chat.setMessages(prev =>
-            prev.length === 1 && prev[0].role === "assistant"
+            prev.length === 1 && prev[0].role === "assistant" && prev[0].content === originalGreeting
               ? [{ role: "assistant", content: greeting }]
               : prev
           );
@@ -245,7 +254,8 @@ export function ChatScreen({ profile }: ChatScreenProps) {
 
   // === タスクページからの「ゆりに相談」フォーカス ===
   useEffect(() => {
-    if (isTreeLoading || typeof window === "undefined") return;
+    // ツリーと会話履歴の両方のロード完了を待つ（履歴復元との競合防止）
+    if (isTreeLoading || chat.isLoadingHistory || typeof window === "undefined") return;
     const focusNodeId = sessionStorage.getItem(FOCUS_NODE_STORAGE_KEY);
     if (!focusNodeId) return;
     sessionStorage.removeItem(FOCUS_NODE_STORAGE_KEY);
@@ -258,7 +268,7 @@ export function ChatScreen({ profile }: ChatScreenProps) {
       `「${nodeName}」について相談ですね。今どんな状況ですか？困ってることがあれば教えてください。`
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTreeLoading]);
+  }, [isTreeLoading, chat.isLoadingHistory]);
 
   // === 設定モーダル・削除確認 ===
   const [showSettings, setShowSettings] = useState(false);

@@ -29,6 +29,11 @@ if (!getApps().length) {
 
 // Verify cron secret
 function verifyCronSecret(request: NextRequest): boolean {
+  // シークレット未設定時は「Bearer undefined」で認証が通ってしまうため必ず拒否する
+  if (!process.env.CRON_SECRET) {
+    console.error("CRON_SECRET is not set; rejecting cron request");
+    return false;
+  }
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return false;

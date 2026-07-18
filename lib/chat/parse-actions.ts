@@ -175,6 +175,12 @@ export function cleanAllTags(text: string): string {
     .trim();
 }
 
+// アクションタグから抽出した文字列のサニタイズ
+// メモはtextToHtml→dangerouslySetInnerHTMLで表示されるため、HTMLタグ構成文字を除去してXSSを防ぐ
+function clean(s: string): string {
+  return s.replace(/[<>]/g, "").trim();
+}
+
 // AIレスポンスからアクション提案を解析（複数アクション対応）
 export function parseActionsFromResponse(content: string, tree: any[]): { cleanContent: string; actions: ActionItem[] } {
   const actions: ActionItem[] = [];
@@ -182,7 +188,7 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // Goal追加: [ADD_GOAL:目標名] または [ADD_GOAL:目標名|メモ] （複数対応）
   const goalMatches = content.matchAll(/\[ADD_GOAL:([^\]]+)\]/g);
   for (const match of goalMatches) {
-    const fullContent = match[1].trim();
+    const fullContent = clean(match[1]);
     // パイプ(|)でメモを分離
     const [goalTitle, goalMemo] = fullContent.includes("|")
       ? fullContent.split("|").map(s => s.trim())
@@ -199,8 +205,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // Project追加: [ADD_PROJECT:Goal名:Project名] または [ADD_PROJECT:Goal名:Project名|メモ] （複数対応）
   const projectMatches = content.matchAll(/\[ADD_PROJECT:([^:]+):([^\]]+)\]/g);
   for (const match of projectMatches) {
-    const parentSearch = match[1].trim();
-    const fullContent = match[2].trim();
+    const parentSearch = clean(match[1]);
+    const fullContent = clean(match[2]);
     // パイプ(|)でメモを分離
     const [projectTitle, projectMemo] = fullContent.includes("|")
       ? fullContent.split("|").map(s => s.trim())
@@ -233,8 +239,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // Milestone追加: [ADD_MILESTONE:Project名:Milestone名] または [ADD_MILESTONE:Project名:Milestone名|メモ] （複数対応）
   const milestoneMatches = content.matchAll(/\[ADD_MILESTONE:([^:]+):([^\]]+)\]/g);
   for (const match of milestoneMatches) {
-    const parentSearch = match[1].trim();
-    const fullContent = match[2].trim();
+    const parentSearch = clean(match[1]);
+    const fullContent = clean(match[2]);
     // パイプ(|)でメモを分離
     const [milestoneTitle, milestoneMemo] = fullContent.includes("|")
       ? fullContent.split("|").map(s => s.trim())
@@ -290,8 +296,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // タスク追加: [ADD_TASK:Milestone名:Task名] または [ADD_TASK:Milestone名:Task名|メモ] （複数対応）
   const taskMatches = content.matchAll(/\[ADD_TASK:([^:]+):([^\]]+)\]/g);
   for (const match of taskMatches) {
-    const parentSearch = match[1].trim();
-    const fullContent = match[2].trim();
+    const parentSearch = clean(match[1]);
+    const fullContent = clean(match[2]);
     // パイプ(|)でメモを分離
     const [taskTitle, taskMemo] = fullContent.includes("|")
       ? fullContent.split("|").map(s => s.trim())
@@ -357,8 +363,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // メモ追加: [ADD_MEMO:ノード名:メモ内容] （複数対応）
   const memoMatches = content.matchAll(/\[ADD_MEMO:([^:]+):([^\]]+)\]/g);
   for (const match of memoMatches) {
-    const nodeSearch = match[1].trim();
-    const memo = match[2].trim();
+    const nodeSearch = clean(match[1]);
+    const memo = clean(match[2]);
     const node = findNodeByIdOrTitle(tree, nodeSearch);
 
     actions.push({
@@ -373,8 +379,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // チェックリスト追加: [ADD_CHECKLIST:Task名:項目1,項目2,項目3] （複数対応）
   const checklistMatches = content.matchAll(/\[ADD_CHECKLIST:([^:]+):([^\]]+)\]/g);
   for (const match of checklistMatches) {
-    const taskSearch = match[1].trim();
-    const items = match[2].split(',').map(s => s.trim()).filter(s => s.length > 0);
+    const taskSearch = clean(match[1]);
+    const items = match[2].split(',').map(s => clean(s)).filter(s => s.length > 0);
     const node = findNodeByIdOrTitle(tree, taskSearch);
 
     if (items.length > 0) {
@@ -391,8 +397,8 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // 完了条件セット: [SET_COMPLETION:ノード名:完了条件: ○○ / 進め方: ○○] （複数対応）
   const completionMatches = content.matchAll(/\[SET_COMPLETION:([^:]+):([^\]]+)\]/g);
   for (const match of completionMatches) {
-    const nodeSearch = match[1].trim();
-    const completionText = match[2].trim();
+    const nodeSearch = clean(match[1]);
+    const completionText = clean(match[2]);
     const node = findNodeByIdOrTitle(tree, nodeSearch);
 
     actions.push({
@@ -407,7 +413,7 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // カレンダーイベント追加: [CALENDAR_ADD:タイトル|開始日時|終了日時] または [CALENDAR_ADD:タイトル|開始日時]
   const calendarMatches = content.matchAll(/\[CALENDAR_ADD:([^\]]+)\]/g);
   for (const match of calendarMatches) {
-    const parts = match[1].split("|").map(s => s.trim());
+    const parts = match[1].split("|").map(s => clean(s));
     if (parts.length >= 2) {
       actions.push({
         type: "add_calendar_event",
@@ -423,7 +429,7 @@ export function parseActionsFromResponse(content: string, tree: any[]): { cleanC
   // 約束追跡: [PROMISE:内容] または [PROMISE:内容|期限]
   const promiseMatches = content.matchAll(/\[PROMISE:([^\]]+)\]/g);
   for (const match of promiseMatches) {
-    const parts = match[1].split("|").map(s => s.trim());
+    const parts = match[1].split("|").map(s => clean(s));
     if (parts.length >= 1 && parts[0]) {
       actions.push({
         type: "add_promise",
