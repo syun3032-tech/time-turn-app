@@ -4,7 +4,7 @@ import { Box, Text, VStack, HStack, Input, Button, Image } from "@chakra-ui/reac
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserProfile, createUserProfile, updateUserProfile } from "@/lib/firebase/firestore";
+import { getUserProfile, createUserProfile, updateUserProfile, updateStructuredKnowledge } from "@/lib/firebase/firestore";
 import { chatWithAISeamless } from "@/lib/ai-service";
 
 // オンボーディング会話のステージ
@@ -276,6 +276,23 @@ export default function OnboardingPage() {
         await updateUserProfile(user.uid, profileData);
       } else {
         await createUserProfile(user.uid, user.email || "", profileData);
+      }
+
+      // 秘書ちゃんの記憶（構造化ナレッジ）に初期シードを保存（失敗しても続行）
+      try {
+        await updateStructuredKnowledge(user.uid, {
+          basicInfo: occupation ? { occupation } : undefined,
+          interests: deepDiveAnswers
+            .filter(a => a.trim())
+            .map(a => ({ topic: a.trim().slice(0, 50), depth: "mention" as const })),
+          concreteGoals: initialGoal ? [{ goal: initialGoal }] : undefined,
+          recentContext: {
+            summary: `オンボーディング完了。${initialGoal ? `気になっていること: ${initialGoal}` : "初対面の挨拶を交わした"}`,
+            mood: "neutral" as const,
+          },
+        });
+      } catch (seedError) {
+        console.error("Failed to seed structured knowledge:", seedError);
       }
 
       router.push("/dashboard");

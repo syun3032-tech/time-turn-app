@@ -1,8 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_TIMEOUT_MS = 15000; // 15秒タイムアウト
+
+// Initialize Firebase Admin SDK（認証検証用）
+if (!getApps().length) {
+  try {
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+      : undefined;
+
+    if (serviceAccount) {
+      initializeApp({
+        credential: cert(serviceAccount),
+      });
+    }
+  } catch (error) {
+    console.error("Firebase Admin initialization error:", error);
+  }
+}
+
+/**
+ * Firebase IDトークンを検証し、uidを返す。
+ * Admin SDK未初期化（ローカルで鍵未設定）の場合は検証をスキップする。
+ */
+async function verifyAuth(request: NextRequest): Promise<{ uid: string | null; authorized: boolean }> {
+  if (!getApps().length) {
+    console.warn("Firebase Admin not initialized; skipping auth verification");
+    return { uid: null, authorized: true };
+  }
+
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { uid: null, authorized: false };
+  }
+
+  try {
+    const decoded = await getAuth().verifyIdToken(authHeader.slice(7));
+    return { uid: decoded.uid, authorized: true };
+  } catch {
+    return { uid: null, authorized: false };
+  }
+}
 
 // 構造化ログ出力
 function log(level: "info" | "error" | "warn", data: Record<string, unknown>) {
@@ -23,9 +65,19 @@ export async function POST(request: NextRequest) {
   const startedAt = Date.now();
 
   try {
+    // 認証チェック（未ログインからのGeminiクォータ消費を防ぐ）
+    const { uid, authorized } = await verifyAuth(request);
+    if (!authorized) {
+      log("warn", { traceId, event: "unauthorized" });
+      return NextResponse.json(
+        { success: false, error: "Unauthorized", traceId },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
 
-    log("info", { traceId, event: "request_start", hasMessages: !!body.messages, hasSingleMessage: !!body.message });
+    log("info", { traceId, event: "request_start", uid, hasMessages: !!body.messages, hasSingleMessage: !!body.message });
 
     // 新形式（messages配列）と旧形式（message文字列）の両方に対応
     const messages = body.messages;

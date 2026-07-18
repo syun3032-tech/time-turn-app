@@ -101,7 +101,8 @@ export function formatTaskMessage(template: string, taskTitle: string): string {
  * 時間帯を判定
  */
 export function getTimeOfDay(): 'morning' | 'afternoon' | 'evening' | 'night' {
-  const hour = new Date().getHours();
+  // サーバーはUTCで動くため、JST（UTC+9）に変換して判定する
+  const hour = (new Date().getUTCHours() + 9) % 24;
   if (hour >= 5 && hour < 12) return 'morning';
   if (hour >= 12 && hour < 17) return 'afternoon';
   if (hour >= 17 && hour < 21) return 'evening';

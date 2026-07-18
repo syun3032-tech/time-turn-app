@@ -7,6 +7,25 @@ import { getEnhancedTaskBreakdownPrompt } from "./prompts";
 import { getSystemPrompt } from "@/config/character";
 import { generateTaskTreeContext } from "./task-tree-utils";
 import { TaskBreakdownContext } from "@/types/task-tree";
+import { auth } from "./firebase/config";
+
+/**
+ * /api/chat 用の認証ヘッダーを生成（Firebase IDトークン付き）
+ */
+async function getChatHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  try {
+    const token = await auth?.currentUser?.getIdToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  } catch (e) {
+    console.error("Failed to get ID token:", e);
+  }
+  return headers;
+}
 
 // 使用するAIプロバイダー
 export type AIProvider = "openai" | "anthropic" | "gemini";
@@ -178,9 +197,7 @@ async function callGemini(prompt: string, _mode: APIKeyMode = "chat") {
   try {
     const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await getChatHeaders(),
       body: JSON.stringify({
         messages: [{ role: "user", content: prompt }],
       }),
@@ -340,9 +357,7 @@ async function chatWithGemini(
   try {
     const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await getChatHeaders(),
       body: JSON.stringify({ messages }),
     });
 
@@ -578,9 +593,7 @@ async function chatWithGeminiWithMode(
   try {
     const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await getChatHeaders(),
       body: JSON.stringify({ messages }),
     });
 
