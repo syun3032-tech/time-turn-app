@@ -203,6 +203,11 @@ export function SettingsModal({ isOpen, onClose, profile, onSave, onLogout }: Se
             >
               ログアウト
             </Button>
+            {/* 3Dモデルのクレジット表記（利用規約で必須） */}
+            <Text fontSize="10px" color="gray.400" mt={3} textAlign="center">
+              3Dモデル: フリー素材キャラクター「つくよみちゃん」公式3Dモデル タイプA（© Rei Yumesaki）
+              https://tyc.rei-yumesaki.net/
+            </Text>
           </Box>
         </VStack>
       </Box>

@@ -9,9 +9,8 @@ const VrmAvatar = dynamic(() => import("@/components/chat/VrmAvatar").then(m => 
 
 /**
  * VRM動作確認ページ（開発用・ナビからはリンクしない）
- * public/models/sample.vrm（three-vrm公式サンプル）で
- * 口パク・まばたき・表情・アイドルモーションを確認できる。
- * ゆりのVRMが完成したら public/models/yuri.vrm に置けば本番に反映される。
+ * public/models/yuri.vrm で口パク・まばたき・表情・アイドルモーションを確認できる。
+ * モデルを差し替えるときは同じパスに置くだけ。
  */
 export default function VrmTestPage() {
   const [talking, setTalking] = useState(false);
@@ -21,7 +20,7 @@ export default function VrmTestPage() {
   return (
     <Flex direction="column" h="100dvh" bg="linear-gradient(175deg, #dff0ec 0%, #f2f3ee 45%, #e8e4da 100%)">
       <Box p={3}>
-        <Text fontWeight="bold">VRMテスト（sample.vrm）</Text>
+        <Text fontWeight="bold">VRMテスト（yuri.vrm）</Text>
         <Text fontSize="xs" color="gray.600">
           ゆりのVRMができたら public/models/yuri.vrm に置くと本番ホームが3Dになります
         </Text>
@@ -29,10 +28,10 @@ export default function VrmTestPage() {
 
       <Flex flex={1} justify="center" align="center" minH={0}>
         {error ? (
-          <Text color="red.500">sample.vrm の読み込みに失敗しました</Text>
+          <Text color="red.500">yuri.vrm の読み込みに失敗しました</Text>
         ) : (
           <VrmAvatar
-            src="/models/sample.vrm"
+            src="/models/yuri.vrm"
             expression={expression}
             talking={talking}
             height="90%"
