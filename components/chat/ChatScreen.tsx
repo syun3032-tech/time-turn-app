@@ -1,11 +1,13 @@
 "use client";
 
-import { Box, Flex, Text, HStack, IconButton, Image } from "@chakra-ui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Flex, Text, HStack, IconButton } from "@chakra-ui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiSettings, FiClock } from "react-icons/fi";
+import { FiSettings, FiClock, FiVolume2, FiVolumeX } from "react-icons/fi";
 import { useAuth } from "@/contexts/AuthContext";
-import { CharacterAvatar, getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
+import { getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
+import { YuriAvatar } from "./YuriAvatar";
+import { isSpeechSupported, unlockSpeech, speak, stopSpeaking } from "@/lib/chat/voice";
 import { SettingsModal } from "@/components/SettingsModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { chatWithAISeamless } from "@/lib/ai-service";
@@ -34,6 +36,14 @@ import { ChatInput } from "./ChatInput";
 import { CalendarConnectBanner } from "./CalendarConnectBanner";
 
 const CONTEXT_NOTE = "ユーザーはホーム画面であなたと話しています。日常会話・スケジュール・目標、なんでも相手をしてください。";
+
+// [EMOTE:] タグ → 表情
+const EMOTE_TO_EXPRESSION: Record<string, Expression> = {
+  normal: "normal",
+  happy: "wawa",
+  smug: "niyari",
+  calm: "mewo",
+};
 
 // タスクページから「ゆりに相談」で渡されるノードID
 export const FOCUS_NODE_STORAGE_KEY = "yuri-focus-node-id";
@@ -154,7 +164,7 @@ export function ChatScreen({ profile }: ChatScreenProps) {
     if (expressionTimerRef.current) clearTimeout(expressionTimerRef.current);
     setExpression(next);
     if (next !== "normal") {
-      expressionTimerRef.current = setTimeout(() => setExpression("normal"), 5000);
+      expressionTimerRef.current = setTimeout(() => setExpression("normal"), 7000);
     }
   };
 
@@ -162,6 +172,42 @@ export function ChatScreen({ profile }: ChatScreenProps) {
     return () => {
       if (expressionTimerRef.current) clearTimeout(expressionTimerRef.current);
     };
+  }, []);
+
+  // === 発話状態（口パク駆動: タイピング表示 or 音声再生中） ===
+  const [typingActive, setTypingActive] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const talking = typingActive || speaking;
+  const handleTypingChange = useCallback((t: boolean) => setTypingActive(t), []);
+
+  // === 音声（Web Speech API・端末内蔵TTS） ===
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voiceEnabledRef = useRef(false);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" && localStorage.getItem("yuri-voice") === "1";
+    if (saved && isSpeechSupported()) {
+      setVoiceEnabled(true);
+      voiceEnabledRef.current = true;
+    }
+  }, []);
+
+  const toggleVoice = () => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    voiceEnabledRef.current = next;
+    localStorage.setItem("yuri-voice", next ? "1" : "0");
+    if (next) {
+      unlockSpeech(); // ユーザー操作起点でiOSの発話制限を解除
+    } else {
+      stopSpeaking();
+      setSpeaking(false);
+    }
+  };
+
+  // 画面離脱時に読み上げを止める
+  useEffect(() => {
+    return () => stopSpeaking();
   }, []);
 
   // === チャット本体 ===
@@ -187,8 +233,18 @@ export function ChatScreen({ profile }: ChatScreenProps) {
     getKnowledgeContext: () => getStructuredProfileContext(profile, knowledgeForPrompt),
     checkBeforeSend: () => (isLimitReached ? getLimitReachedMessage() : null),
     onAssistantReply: (content, allMessages) => {
-      // 表情を変更（5秒後にnormalへ）
-      setExpressionWithAutoReset(getExpressionForMessage(content));
+      // 表情を変更: AIの[EMOTE:]タグ優先、なければキーワード判定（7秒後にnormalへ）
+      const lastMsg = allMessages[allMessages.length - 1];
+      const emoteExpression = lastMsg?.emote ? EMOTE_TO_EXPRESSION[lastMsg.emote] : undefined;
+      setExpressionWithAutoReset(emoteExpression ?? getExpressionForMessage(content));
+
+      // 音声読み上げ（ONのとき）
+      if (voiceEnabledRef.current) {
+        speak(content, {
+          onStart: () => setSpeaking(true),
+          onEnd: () => setSpeaking(false),
+        });
+      }
 
       // 利用回数をインクリメント
       if (user) {
@@ -287,93 +343,157 @@ export function ChatScreen({ profile }: ChatScreenProps) {
   if (!user) return null;
 
   return (
-    <Flex direction="column" h="100dvh" bg="gray.50" pb="64px">
-      {/* ヘッダー */}
-      <Box bg="teal.500" px={4} py={2} flexShrink={0}>
-        <HStack justify="space-between">
-          <HStack gap={2}>
-            <Box w="34px" h="34px" borderRadius="full" bg="white" overflow="hidden">
-              <Image
-                src="/hisyochan-icon.png"
-                alt="秘書ゆり"
-                w="100%"
-                h="100%"
-                objectFit="cover"
-                objectPosition="center top"
-              />
-            </Box>
-            <Text color="white" fontWeight="bold" fontSize="md">秘書ゆり</Text>
-          </HStack>
-          <HStack gap={1}>
-            <IconButton
-              aria-label="会話履歴"
-              variant="ghost"
-              color="white"
-              size="sm"
-              _hover={{ bg: "whiteAlpha.200" }}
-              border={chat.showHistoryPicker ? "1px solid" : "none"}
-              borderColor="yellow.300"
-              onClick={() => {
-                chat.loadConversations();
-                chat.setShowHistoryPicker(!chat.showHistoryPicker);
-              }}
-            >
-              <FiClock size={18} />
-            </IconButton>
-            <IconButton
-              aria-label="設定"
-              variant="ghost"
-              color="white"
-              size="sm"
-              _hover={{ bg: "whiteAlpha.200" }}
-              onClick={() => setShowSettings(true)}
-            >
-              <FiSettings size={18} />
-            </IconButton>
-          </HStack>
-        </HStack>
-      </Box>
+    <Box position="relative" h="100dvh" overflow="hidden" pb="64px">
+      {/* ステージ背景 */}
+      <Box
+        position="absolute"
+        inset={0}
+        background="linear-gradient(175deg, #dff0ec 0%, #f2f3ee 45%, #e8e4da 100%)"
+      />
 
-      {/* キャラクターエリア */}
-      <Flex justify="center" align="flex-end" pt={2} flexShrink={0} bg="gray.50">
-        <CharacterAvatar
-          expression={expression}
-          variant="bare"
-          width="120px"
-          height="150px"
-        />
+      {/* ゆり本体（画面上部の主役） */}
+      <Flex
+        position="absolute"
+        top="40px"
+        left={0}
+        right={0}
+        justify="center"
+        h="58dvh"
+        zIndex={1}
+        pointerEvents="none"
+      >
+        <YuriAvatar expression={expression} talking={talking} height="100%" />
       </Flex>
 
-      {/* メッセージエリア */}
-      <Box ref={messagesContainerRef} flex={1} overflowY="auto" p={4}>
-        {chat.showHistoryPicker ? (
-          <HistoryPicker
-            conversations={chat.conversations}
-            currentConversationId={chat.conversationId}
-            onSelect={chat.handleSelectConversation}
-            onNewChat={chat.handleNewChat}
-            onRequestDelete={setDeleteTargetId}
-            onCancel={() => chat.setShowHistoryPicker(false)}
-          />
-        ) : (
-          <>
-            <CalendarConnectBanner />
-            <MessageList
-              messages={chat.messages}
-              isLoading={chat.isLoading}
-              onToggleAction={chat.handleToggleAction}
-              onConfirmActions={chat.handleConfirmActions}
-              onQuickSelect={(option) => chat.handleSend(option)}
-              onQuickMultiSubmit={(options) => chat.handleSend(options.join("、"))}
-              onQuickRankSubmit={(options) => chat.handleSend(options.map((opt, i) => `${i + 1}. ${opt}`).join(" → "))}
-              containerRef={messagesContainerRef}
-            />
-          </>
-        )}
-      </Box>
+      {/* ヘッダー（オーバーレイ） */}
+      <HStack
+        position="absolute"
+        top={0}
+        left={0}
+        right={0}
+        zIndex={5}
+        px={3}
+        py={2}
+        justify="space-between"
+      >
+        <HStack
+          gap={2}
+          bg="blackAlpha.400"
+          backdropFilter="blur(8px)"
+          borderRadius="full"
+          px={3}
+          py={1}
+        >
+          <Box w="8px" h="8px" borderRadius="full" bg="green.300" />
+          <Text color="white" fontWeight="bold" fontSize="sm">秘書ゆり</Text>
+          <Text color="whiteAlpha.800" fontSize="xs">出勤中</Text>
+        </HStack>
+        <HStack gap={1}>
+          {isSpeechSupported() && (
+            <IconButton
+              aria-label={voiceEnabled ? "音声OFF" : "音声ON"}
+              size="sm"
+              borderRadius="full"
+              bg={voiceEnabled ? "teal.500" : "blackAlpha.400"}
+              color="white"
+              backdropFilter="blur(8px)"
+              _hover={{ bg: voiceEnabled ? "teal.600" : "blackAlpha.500" }}
+              onClick={toggleVoice}
+            >
+              {voiceEnabled ? <FiVolume2 size={16} /> : <FiVolumeX size={16} />}
+            </IconButton>
+          )}
+          <IconButton
+            aria-label="会話履歴"
+            size="sm"
+            borderRadius="full"
+            bg="blackAlpha.400"
+            color="white"
+            backdropFilter="blur(8px)"
+            _hover={{ bg: "blackAlpha.500" }}
+            border={chat.showHistoryPicker ? "2px solid" : "none"}
+            borderColor="yellow.300"
+            onClick={() => {
+              chat.loadConversations();
+              chat.setShowHistoryPicker(!chat.showHistoryPicker);
+            }}
+          >
+            <FiClock size={16} />
+          </IconButton>
+          <IconButton
+            aria-label="設定"
+            size="sm"
+            borderRadius="full"
+            bg="blackAlpha.400"
+            color="white"
+            backdropFilter="blur(8px)"
+            _hover={{ bg: "blackAlpha.500" }}
+            onClick={() => setShowSettings(true)}
+          >
+            <FiSettings size={16} />
+          </IconButton>
+        </HStack>
+      </HStack>
 
-      {/* 入力エリア */}
-      <ChatInput onSend={chat.handleSend} disabled={chat.isLoading} />
+      {/* チャットオーバーレイ（ライブ配信のコメント欄風） */}
+      <Flex
+        position="absolute"
+        left={0}
+        right={0}
+        bottom="64px"
+        top="44dvh"
+        zIndex={2}
+        direction="column"
+      >
+        {/* 下に向かって濃くなるスクリム（文字の可読性確保） */}
+        <Box
+          position="absolute"
+          inset={0}
+          background="linear-gradient(180deg, transparent 0%, rgba(22,28,38,0.35) 22%, rgba(22,28,38,0.72) 60%, rgba(22,28,38,0.82) 100%)"
+          pointerEvents="none"
+        />
+        <Box
+          ref={messagesContainerRef}
+          flex={1}
+          overflowY="auto"
+          px={4}
+          pt={10}
+          pb={2}
+          position="relative"
+          zIndex={1}
+        >
+          {chat.showHistoryPicker ? (
+            <HistoryPicker
+              conversations={chat.conversations}
+              currentConversationId={chat.conversationId}
+              onSelect={chat.handleSelectConversation}
+              onNewChat={chat.handleNewChat}
+              onRequestDelete={setDeleteTargetId}
+              onCancel={() => chat.setShowHistoryPicker(false)}
+            />
+          ) : (
+            <>
+              <CalendarConnectBanner />
+              <MessageList
+                messages={chat.messages}
+                isLoading={chat.isLoading}
+                onToggleAction={chat.handleToggleAction}
+                onConfirmActions={chat.handleConfirmActions}
+                onQuickSelect={(option) => chat.handleSend(option)}
+                onQuickMultiSubmit={(options) => chat.handleSend(options.join("、"))}
+                onQuickRankSubmit={(options) => chat.handleSend(options.map((opt, i) => `${i + 1}. ${opt}`).join(" → "))}
+                containerRef={messagesContainerRef}
+                onTypingChange={handleTypingChange}
+              />
+            </>
+          )}
+        </Box>
+
+        {/* 入力エリア */}
+        <Box position="relative" zIndex={1}>
+          <ChatInput onSend={chat.handleSend} disabled={chat.isLoading} />
+        </Box>
+      </Flex>
 
       {/* 設定モーダル */}
       <SettingsModal
@@ -400,6 +520,6 @@ export function ChatScreen({ profile }: ChatScreenProps) {
         cancelText="キャンセル"
         confirmColorScheme="red"
       />
-    </Flex>
+    </Box>
   );
 }

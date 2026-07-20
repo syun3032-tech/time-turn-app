@@ -40,6 +40,7 @@ export interface ChatMessage {
   actions?: ActionItem[]; // 複数アクション対応
   actionsConfirmed?: boolean; // アクション全体の確認状態
   quickReply?: QuickReply;
+  emote?: "normal" | "happy" | "smug" | "calm"; // AIが選んだ表情
 }
 
 // チャットからタスクツリーを操作するためのインターフェース

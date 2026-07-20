@@ -18,7 +18,7 @@ import type { Conversation } from "@/lib/firebase/firestore-types";
 import type { ChecklistItem } from "@/types/task-tree";
 import { parseQuickReplies } from "@/lib/parse-quick-replies";
 import type { ChatMessage, TaskTreeActions } from "./types";
-import { parseActionsFromResponse, findNodeByIdOrTitle } from "./parse-actions";
+import { parseActionsFromResponse, findNodeByIdOrTitle, parseEmote } from "./parse-actions";
 import {
   buildSecretarySystemPrompt,
   buildTaskInfo,
@@ -549,8 +549,10 @@ ${conversationText}`,
       ]);
 
       if (response.success && response.content) {
+        // 表情タグを解析・除去
+        const emoteParsed = parseEmote(response.content);
         // アクション提案を解析（複数対応）
-        const { cleanContent, actions: parsedActions } = parseActionsFromResponse(response.content, taskTree || []);
+        const { cleanContent, actions: parsedActions } = parseActionsFromResponse(emoteParsed.content, taskTree || []);
         // クイックリプライタグを解析
         const quickParsed = parseQuickReplies(cleanContent);
         const newMsg: ChatMessage = {
@@ -558,6 +560,7 @@ ${conversationText}`,
           content: quickParsed.content,
           actions: parsedActions.length > 0 ? parsedActions : undefined,
           quickReply: quickParsed.quickReply ?? undefined,
+          emote: emoteParsed.emote ?? undefined,
         };
         const allMessages = [...newMessages, newMsg];
         setMessages(allMessages);

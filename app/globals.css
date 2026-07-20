@@ -47,6 +47,18 @@ a {
   51%, 100% { opacity: 0; }
 }
 
+/* ゆり: 待機中のゆっくり呼吸 */
+@keyframes yuriBreath {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(2px) scaleY(0.995); }
+}
+
+/* ゆり: 発話中の小さなバウンス（PNGTuberスタイル） */
+@keyframes yuriTalkBounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+
 /* ミニキャラ歩きアニメーション（往復再生） */
 @keyframes miniCharWalk {
   from { background-position: 0 0; }

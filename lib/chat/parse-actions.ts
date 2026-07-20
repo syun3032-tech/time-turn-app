@@ -175,6 +175,18 @@ export function cleanAllTags(text: string): string {
     .trim();
 }
 
+// 表情タグ: [EMOTE:normal|happy|smug|calm] を抽出して本文から除去
+export type EmoteKey = "normal" | "happy" | "smug" | "calm";
+
+export function parseEmote(content: string): { emote: EmoteKey | null; content: string } {
+  const match = content.match(/\[EMOTE:(normal|happy|smug|calm)\]/i);
+  const cleaned = content.replace(/\[EMOTE:[^\]]*\]/gi, "").trim();
+  return {
+    emote: match ? (match[1].toLowerCase() as EmoteKey) : null,
+    content: cleaned,
+  };
+}
+
 // アクションタグから抽出した文字列のサニタイズ
 // メモはtextToHtml→dangerouslySetInnerHTMLで表示されるため、HTMLタグ構成文字を除去してXSSを防ぐ
 function clean(s: string): string {

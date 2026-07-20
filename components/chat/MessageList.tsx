@@ -19,6 +19,8 @@ interface MessageListProps {
   onQuickRankSubmit?: (options: string[]) => void;
   /** スクロールコンテナ（タイピング中の自動スクロール用） */
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  /** タイピングアニメーションの進行状態を親へ通知（口パク連動用） */
+  onTypingChange?: (isTyping: boolean) => void;
 }
 
 function AssistantIcon({ src }: { src: string }) {
@@ -57,6 +59,7 @@ export function MessageList({
   onQuickMultiSubmit,
   onQuickRankSubmit,
   containerRef,
+  onTypingChange,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +76,11 @@ export function MessageList({
     speed: 25,
     enabled: !isLoading,
   });
+
+  // タイピング状態を親へ通知
+  useEffect(() => {
+    onTypingChange?.(isTyping);
+  }, [isTyping, onTypingChange]);
 
   // 自動スクロール（メッセージ追加時）
   useEffect(() => {
