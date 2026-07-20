@@ -19,12 +19,13 @@ interface VrmAvatarProps {
 }
 
 // アプリの表情 → VRM表情プリセットのターゲット値
+// 通常時もほんのり微笑ませておく（無表情だと怖いので）
 const EXPRESSION_TARGETS: Record<Expression, Record<string, number>> = {
-  normal: {},
-  open_mouth: {},
-  ookiokutigake: {},
+  normal: { happy: 0.25 },
+  open_mouth: { happy: 0.25 },
+  ookiokutigake: { happy: 0.25 },
   wawa: { surprised: 0.6, happy: 0.4 },
-  niyari: { happy: 0.7 },
+  niyari: { happy: 0.8 },
   mewo: { relaxed: 1.0 },
 };
 
@@ -62,10 +63,14 @@ export function VrmAvatar({ src, expression, talking, height = "100%", onLoaded,
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(25, 1, 0.1, 20);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
-    dirLight.position.set(0.5, 1.5, 1.5);
+    // やわらかい暖色ライティング（可愛く見せる）
+    const dirLight = new THREE.DirectionalLight(0xfff2e8, 1.5);
+    dirLight.position.set(0.6, 1.6, 1.8);
     scene.add(dirLight);
-    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const fillLight = new THREE.DirectionalLight(0xe8f0ff, 0.5);
+    fillLight.position.set(-0.8, 0.6, 1.0);
+    scene.add(fillLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.1));
 
     const resize = () => {
       const w = container.clientWidth;
@@ -98,13 +103,13 @@ export function VrmAvatar({ src, expression, talking, height = "100%", onLoaded,
         vrm.scene.traverse(obj => { obj.frustumCulled = false; });
         scene.add(vrm.scene);
 
-        // 腕を下ろす（VRMはTポーズがデフォルト）
+        // 腕を下ろす（VRMはTポーズがデフォルト。自然なAポーズに）
         const leftArm = vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
         const rightArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
-        if (leftArm) leftArm.rotation.z = 1.15;
-        if (rightArm) rightArm.rotation.z = -1.15;
+        if (leftArm) leftArm.rotation.z = -1.15;
+        if (rightArm) rightArm.rotation.z = 1.15;
 
-        // カメラを頭に合わせてフレーミング（頭+胸まで）
+        // カメラを頭に合わせてフレーミング（頭上に余白 + 胸まで見せる）
         const head = vrm.humanoid.getNormalizedBoneNode("head");
         let headY = 1.35;
         if (head) {
@@ -113,8 +118,8 @@ export function VrmAvatar({ src, expression, talking, height = "100%", onLoaded,
           head.getWorldPosition(p);
           headY = p.y;
         }
-        camera.position.set(0, headY + 0.02, 0.95);
-        camera.lookAt(0, headY - 0.12, 0);
+        camera.position.set(0, headY + 0.04, 1.25);
+        camera.lookAt(0, headY - 0.22, 0);
 
         // カメラ目線
         if (vrm.lookAt) vrm.lookAt.target = camera;
