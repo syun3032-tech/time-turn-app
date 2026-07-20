@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { FiSettings, FiClock, FiVolume2, FiVolumeX } from "react-icons/fi";
 import { useAuth } from "@/contexts/AuthContext";
 import { getExpressionForMessage, type Expression } from "@/components/CharacterAvatar";
-import { YuriAvatar } from "./YuriAvatar";
+import { StageAvatar } from "./StageAvatar";
 import { isSpeechSupported, unlockSpeech, speak, stopSpeaking } from "@/lib/chat/voice";
 import { SettingsModal } from "@/components/SettingsModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
@@ -362,7 +362,7 @@ export function ChatScreen({ profile }: ChatScreenProps) {
         zIndex={1}
         pointerEvents="none"
       >
-        <YuriAvatar expression={expression} talking={talking} height="100%" />
+        <StageAvatar expression={expression} talking={talking} height="100%" />
       </Flex>
 
       {/* ヘッダー（オーバーレイ） */}
